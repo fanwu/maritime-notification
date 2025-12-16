@@ -23,6 +23,7 @@ export default function MapView({ vessels, geofences, onGeofenceCreate }: MapVie
   const [showNameModal, setShowNameModal] = useState(false);
   const [pendingGeofence, setPendingGeofence] = useState<[number, number][] | null>(null);
   const [geofenceName, setGeofenceName] = useState('');
+  const [mapLoaded, setMapLoaded] = useState(false);
 
   // Initialize map
   useEffect(() => {
@@ -98,6 +99,9 @@ export default function MapView({ vessels, geofences, onGeofenceCreate }: MapVie
           'line-width': 2,
         },
       });
+
+      // Mark map as loaded so geofences can be rendered
+      setMapLoaded(true);
     });
 
     return () => {
@@ -108,10 +112,12 @@ export default function MapView({ vessels, geofences, onGeofenceCreate }: MapVie
 
   // Update geofences on map
   useEffect(() => {
-    if (!map.current?.isStyleLoaded()) return;
+    if (!mapLoaded || !map.current) return;
 
     const source = map.current.getSource('geofences') as mapboxgl.GeoJSONSource;
     if (!source) return;
+
+    console.log('Rendering geofences on map:', geofences.length);
 
     source.setData({
       type: 'FeatureCollection',
@@ -124,7 +130,7 @@ export default function MapView({ vessels, geofences, onGeofenceCreate }: MapVie
         },
       })),
     });
-  }, [geofences]);
+  }, [geofences, mapLoaded]);
 
   // Update vessel markers
   useEffect(() => {

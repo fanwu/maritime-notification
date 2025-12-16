@@ -3,6 +3,10 @@ import { parse } from 'url';
 import next from 'next';
 import { Server as SocketIOServer } from 'socket.io';
 import { Kafka, logLevel } from 'kafkajs';
+import { PrismaClient } from '@prisma/client';
+import * as turf from '@turf/turf';
+
+const prisma = new PrismaClient();
 
 const dev = process.env.NODE_ENV !== 'production';
 const hostname = 'localhost';
@@ -58,54 +62,85 @@ async function startKafkaConsumer(io: SocketIOServer) {
   }
 }
 
-// Simplified vessel processing for demo
-// In production, this would use the full rules-engine
+// State tracking for geofence and destination changes
 const vesselGeofenceState: Map<string, boolean> = new Map();
 const vesselDestinationState: Map<number, string> = new Map();
 
+// Cache geofences to avoid constant DB queries (refresh every 5 seconds)
+let geofenceCache: Array<{ id: string; clientId: string; name: string; coordinates: [number, number][] }> = [];
+let lastGeofenceFetch = 0;
+const GEOFENCE_CACHE_TTL = 5000;
+
+async function getGeofences() {
+  const now = Date.now();
+  if (now - lastGeofenceFetch > GEOFENCE_CACHE_TTL) {
+    const dbGeofences = await prisma.geofence.findMany({
+      where: { isActive: true },
+    });
+    geofenceCache = dbGeofences.map((g) => ({
+      id: g.id,
+      clientId: g.clientId,
+      name: g.name,
+      coordinates: JSON.parse(g.coordinates) as [number, number][],
+    }));
+    lastGeofenceFetch = now;
+    console.log(`[Geofence] Refreshed cache: ${geofenceCache.length} active geofences`);
+  }
+  return geofenceCache;
+}
+
+function isPointInPolygon(point: [number, number], polygon: [number, number][]): boolean {
+  // Ensure polygon is closed
+  const closedPolygon = [...polygon];
+  if (
+    closedPolygon[0][0] !== closedPolygon[closedPolygon.length - 1][0] ||
+    closedPolygon[0][1] !== closedPolygon[closedPolygon.length - 1][1]
+  ) {
+    closedPolygon.push(closedPolygon[0]);
+  }
+  const turfPoint = turf.point(point);
+  const turfPolygon = turf.polygon([closedPolygon]);
+  return turf.booleanPointInPolygon(turfPoint, turfPolygon);
+}
+
 async function processVesselUpdate(vessel: any, io: SocketIOServer) {
-  // Demo Singapore Strait geofence check
-  const singaporeStrait = {
-    minLng: 103.6,
-    maxLng: 104.2,
-    minLat: 1.15,
-    maxLat: 1.35,
-  };
+  const geofences = await getGeofences();
 
-  const isInside =
-    vessel.Longitude >= singaporeStrait.minLng &&
-    vessel.Longitude <= singaporeStrait.maxLng &&
-    vessel.Latitude >= singaporeStrait.minLat &&
-    vessel.Latitude <= singaporeStrait.maxLat;
+  // Check all active geofences
+  for (const geofence of geofences) {
+    const point: [number, number] = [vessel.Longitude, vessel.Latitude];
+    const isInside = isPointInPolygon(point, geofence.coordinates);
 
-  const stateKey = `${vessel.IMO}:singapore-strait`;
-  const wasInside = vesselGeofenceState.get(stateKey) ?? false;
+    const stateKey = `${vessel.IMO}:${geofence.id}`;
+    const wasInside = vesselGeofenceState.get(stateKey) ?? false;
 
-  if (isInside !== wasInside) {
-    vesselGeofenceState.set(stateKey, isInside);
+    if (isInside !== wasInside) {
+      vesselGeofenceState.set(stateKey, isInside);
 
-    const action = isInside ? 'entered' : 'exited';
-    const notification = {
-      id: `notif-${Date.now()}-${vessel.IMO}`,
-      clientId: 'demo-client',
-      typeId: 'geofence_alert',
-      title: `Vessel ${action} Singapore Strait`,
-      message: `${vessel.VesselName || `IMO ${vessel.IMO}`} has ${action} the Singapore Strait geofence`,
-      payload: {
-        vesselName: vessel.VesselName,
-        imo: vessel.IMO,
-        latitude: vessel.Latitude,
-        longitude: vessel.Longitude,
-        action,
-        geofenceName: 'Singapore Strait',
-      },
-      priority: 'medium',
-      status: 'pending',
-      createdAt: new Date().toISOString(),
-    };
+      const action = isInside ? 'entered' : 'exited';
+      const notification = {
+        id: `notif-${Date.now()}-${vessel.IMO}-${geofence.id}`,
+        clientId: geofence.clientId,
+        typeId: 'geofence_alert',
+        title: `Vessel ${action} ${geofence.name}`,
+        message: `${vessel.VesselName || `IMO ${vessel.IMO}`} has ${action} the ${geofence.name} geofence`,
+        payload: {
+          vesselName: vessel.VesselName,
+          imo: vessel.IMO,
+          latitude: vessel.Latitude,
+          longitude: vessel.Longitude,
+          action,
+          geofenceName: geofence.name,
+          geofenceId: geofence.id,
+        },
+        priority: 'medium',
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+      };
 
-    console.log(`[Notification] ${notification.title}`);
-    io.to('client:demo-client').emit('notification', notification);
+      console.log(`[Notification] ${notification.title}`);
+      io.to(`client:${geofence.clientId}`).emit('notification', notification);
+    }
   }
 
   // Destination change detection
