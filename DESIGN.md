@@ -219,26 +219,256 @@ The message queue handles high-throughput vessel data ingestion and notification
 
 ### 5.1 Data Ingestion Service
 
+The system supports two ingestion modes: **Push Mode** (production) and **Poll Mode** (MVP/fallback).
+
+#### 5.1.1 Push Mode (Production - Preferred)
+
+Signal Ocean's LatestVesselState API knows when data changes. In production, Signal Ocean pushes change events directly to our system, eliminating the need to poll 50K vessels.
+
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    API Poller Service                        │
-├─────────────────────────────────────────────────────────────┤
-│  ┌─────────────┐   ┌─────────────┐   ┌─────────────┐       │
-│  │  Scheduler  │──▶│  API Client │──▶│  Publisher  │       │
-│  │  (1 min)    │   │  (Batch)    │   │  (Kafka)    │       │
-│  └─────────────┘   └─────────────┘   └─────────────┘       │
-│                                                              │
-│  Strategy: Batch fetch all 50K vessels, publish to Kafka    │
-│  Topic: vessel.state.raw                                     │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    PUSH MODE ARCHITECTURE (Production)                       │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ┌─────────────────────┐                                                    │
+│  │  Signal Ocean API   │                                                    │
+│  │  (LatestVesselState)│                                                    │
+│  └──────────┬──────────┘                                                    │
+│             │                                                                │
+│             │  Push on change (Webhook or Kafka)                            │
+│             ▼                                                                │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                     INGESTION GATEWAY                                │   │
+│  │                                                                       │   │
+│  │  Option A: Webhook Endpoint         Option B: Kafka Consumer         │   │
+│  │  ┌─────────────────────┐           ┌─────────────────────┐          │   │
+│  │  │ POST /webhook/      │           │ Consume from Signal │          │   │
+│  │  │   vessel-state      │           │ Ocean Kafka topic   │          │   │
+│  │  │                     │           │                     │          │   │
+│  │  │ - Validate payload  │           │ - Direct Kafka-to-  │          │   │
+│  │  │ - Auth verification │           │   Kafka bridging    │          │   │
+│  │  │ - Publish to Kafka  │           │ - Lower latency     │          │   │
+│  │  └─────────────────────┘           └─────────────────────┘          │   │
+│  └──────────────────────────────┬──────────────────────────────────────┘   │
+│                                 │                                           │
+│                                 ▼                                           │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                         Apache Kafka                                 │   │
+│  │                   Topic: vessel.state.changed                        │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Key Design Decisions:**
-- Fetch all vessels in batches (e.g., 1000 at a time)
-- Publish raw events to Kafka for downstream processing
-- Separate polling from processing for better scalability
+**Push Mode Benefits:**
+- Real-time updates (sub-second latency)
+- No wasted API calls for unchanged vessels
+- Reduced load on Signal Ocean API
+- More efficient resource usage
+- Signal Ocean only sends actual changes
+
+**Webhook Endpoint Specification:**
+
+```typescript
+// POST /api/webhook/vessel-state
+interface VesselStateWebhook {
+  // Authentication
+  headers: {
+    'X-Signal-Signature': string;    // HMAC signature for verification
+    'X-Signal-Timestamp': string;    // Request timestamp
+  };
+
+  body: {
+    eventType: 'vessel.state.changed';
+    eventId: string;                  // Idempotency key
+    timestamp: string;                // ISO 8601
+    data: {
+      vessel: LatestVesselState;      // Full vessel state
+      changedFields: string[];        // Which fields changed
+      previousValues?: Record<string, any>;  // Optional: previous values
+    };
+  };
+}
+
+// Webhook handler
+async function handleVesselStateWebhook(req: Request): Promise<Response> {
+  // 1. Verify signature
+  if (!verifySignature(req)) {
+    return new Response('Unauthorized', { status: 401 });
+  }
+
+  // 2. Check idempotency (prevent duplicate processing)
+  if (await isAlreadyProcessed(req.body.eventId)) {
+    return new Response('OK', { status: 200 });
+  }
+
+  // 3. Publish to Kafka
+  await kafka.publish('vessel.state.changed', {
+    ...req.body.data.vessel,
+    _meta: {
+      eventId: req.body.eventId,
+      changedFields: req.body.data.changedFields,
+      receivedAt: new Date().toISOString(),
+    }
+  });
+
+  // 4. Mark as processed
+  await markAsProcessed(req.body.eventId);
+
+  return new Response('OK', { status: 200 });
+}
+```
+
+**Kafka-to-Kafka Bridge (if Signal Ocean exposes Kafka):**
+
+```typescript
+// If Signal Ocean provides direct Kafka access
+const signalOceanConsumer = kafka.consumer({ groupId: 'notification-bridge' });
+
+await signalOceanConsumer.subscribe({
+  topic: 'signal-ocean.vessel.state.changes',  // Signal Ocean's topic
+});
+
+await signalOceanConsumer.run({
+  eachMessage: async ({ message }) => {
+    // Transform and republish to our internal topic
+    const vesselState = JSON.parse(message.value.toString());
+
+    await internalProducer.send({
+      topic: 'vessel.state.changed',
+      messages: [{
+        key: vesselState.IMO.toString(),
+        value: JSON.stringify(vesselState),
+      }],
+    });
+  },
+});
+```
+
+#### 5.1.2 Poll Mode (MVP / Fallback)
+
+For the MVP or when push is unavailable, we poll the LatestVesselState API.
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    POLL MODE ARCHITECTURE (MVP / Fallback)                   │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ┌─────────────────────┐                                                    │
+│  │  Signal Ocean API   │                                                    │
+│  │  (LatestVesselState)│                                                    │
+│  └──────────┬──────────┘                                                    │
+│             ▲                                                                │
+│             │  Poll every 1 minute                                          │
+│             │                                                                │
+│  ┌──────────┴──────────────────────────────────────────────────────────┐   │
+│  │                      API POLLER SERVICE                              │   │
+│  │                                                                       │   │
+│  │  ┌─────────────┐   ┌─────────────┐   ┌─────────────┐               │   │
+│  │  │  Scheduler  │──▶│  API Client │──▶│  Publisher  │               │   │
+│  │  │  (1 min)    │   │  (Batch)    │   │  (Kafka)    │               │   │
+│  │  └─────────────┘   └─────────────┘   └─────────────┘               │   │
+│  │                                                                       │   │
+│  │  Strategy:                                                            │   │
+│  │  - Fetch vessels in batches (1000 at a time)                         │   │
+│  │  - Use ModifiedOn timestamp to detect changes                        │   │
+│  │  - Only publish vessels that have changed since last poll            │   │
+│  └──────────────────────────────────────────────────────────────────────┘   │
+│                                 │                                           │
+│                                 ▼                                           │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                         Apache Kafka                                 │   │
+│  │                   Topic: vessel.state.raw                            │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                 │                                           │
+│                                 ▼                                           │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                    CHANGE DETECTION SERVICE                          │   │
+│  │                                                                       │   │
+│  │  - Compare with previous state in Redis                              │   │
+│  │  - Detect which fields changed                                       │   │
+│  │  - Only emit if significant change detected                          │   │
+│  │  - Publish to vessel.state.changed topic                             │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                 │                                           │
+│                                 ▼                                           │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                         Apache Kafka                                 │   │
+│  │                   Topic: vessel.state.changed                        │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+**Poll Mode Optimization:**
+- Use `ModifiedOn` field to skip unchanged vessels
+- Track last poll timestamp per vessel group
+- Only process vessels where `ModifiedOn > lastPollTime`
+
+```typescript
+// Optimized polling using ModifiedOn timestamp
+async function pollVesselStates(groupId: number): Promise<void> {
+  const lastPollTime = await redis.get(`poll:${groupId}:lastTime`);
+
+  // Fetch only modified vessels
+  const vessels = await signalOceanApi.getLatestVesselStates({
+    groupId,
+    modifiedSince: lastPollTime,  // Only get vessels modified since last poll
+  });
+
+  for (const vessel of vessels) {
+    await kafka.publish('vessel.state.raw', vessel);
+  }
+
+  await redis.set(`poll:${groupId}:lastTime`, new Date().toISOString());
+}
+```
+
+#### 5.1.3 Hybrid Mode (Recommended for Production)
+
+Use Push as primary with Poll as fallback for reliability.
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    HYBRID MODE (Production Recommended)                      │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│                      ┌─────────────────────┐                                │
+│                      │  Signal Ocean API   │                                │
+│                      └──────────┬──────────┘                                │
+│                                 │                                           │
+│               ┌─────────────────┴─────────────────┐                        │
+│               │                                   │                        │
+│               ▼                                   ▼                        │
+│  ┌────────────────────────┐        ┌────────────────────────┐             │
+│  │   PUSH (Primary)       │        │   POLL (Fallback)      │             │
+│  │   Webhook/Kafka        │        │   Every 5 minutes      │             │
+│  │   Real-time updates    │        │   Catch missed events  │             │
+│  └───────────┬────────────┘        └───────────┬────────────┘             │
+│              │                                  │                          │
+│              └──────────────┬───────────────────┘                          │
+│                             ▼                                              │
+│              ┌────────────────────────┐                                    │
+│              │   DEDUPLICATION        │                                    │
+│              │   (by IMO + timestamp) │                                    │
+│              └───────────┬────────────┘                                    │
+│                          ▼                                                 │
+│              ┌────────────────────────┐                                    │
+│              │   vessel.state.changed │                                    │
+│              └────────────────────────┘                                    │
+│                                                                              │
+│  Benefits:                                                                  │
+│  - Real-time updates via push                                              │
+│  - Poll catches any missed webhooks                                        │
+│  - Graceful degradation if push fails                                      │
+│  - Self-healing: poll fills gaps automatically                             │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
 
 ### 5.2 Vessel State Processor
+
+The processor is the same regardless of ingestion mode - it receives events from Kafka and processes them.
 
 ```go
 // Pseudocode for vessel state processing
@@ -262,34 +492,444 @@ func hasSignificantChange(prev, curr VesselState) bool {
     // Position change > 0.001 degrees (~100m)
     // Status change
     // Area change
+    // Destination change
     // etc.
 }
 ```
 
-### 5.3 Rules Engine
+### 5.3 Extensible Rules Engine
+
+**Design Principle:** Notification types and rules are treated as *data*, not *code*. New notification types can be added without changing the core codebase or database schema.
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                      Rules Engine                            │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│  Input: Vessel State Change Event                           │
-│                                                              │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │  For each client with rules matching this vessel:    │   │
-│  │                                                       │   │
-│  │  1. Load client rules from cache/DB                  │   │
-│  │  2. Evaluate each rule:                              │   │
-│  │     - Geofence rules (polygon containment)           │   │
-│  │     - Fixture rules (rate, cargo, quantity)          │   │
-│  │     - Status rules (voyage status changes)           │   │
-│  │  3. Check geofence state (was inside? now inside?)   │   │
-│  │  4. Generate notification if rule triggers           │   │
-│  │  5. Deduplicate against recent notifications         │   │
-│  │  6. Publish to notification queue                    │   │
-│  └─────────────────────────────────────────────────────┘   │
-│                                                              │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    EXTENSIBLE RULES ENGINE ARCHITECTURE                      │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ┌────────────────────┐      ┌────────────────────┐                        │
+│  │ Notification Type  │      │ Client Rules       │                        │
+│  │ Definitions        │      │ (per-client config)│                        │
+│  │ (JSON Schema)      │      │ (JSON)             │                        │
+│  └─────────┬──────────┘      └─────────┬──────────┘                        │
+│            │                           │                                    │
+│            ▼                           ▼                                    │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                     GENERIC RULES ENGINE                             │   │
+│  │                                                                       │   │
+│  │  1. Receive event (vessel state, fixture, etc.)                      │   │
+│  │  2. Load all active rules for matching data source                   │   │
+│  │  3. For each rule:                                                   │   │
+│  │     a. Apply entity filters (vessel type, IMO, etc.)                 │   │
+│  │     b. Invoke condition evaluator based on rule type                 │   │
+│  │     c. Check state transitions (enter/exit, changed, etc.)           │   │
+│  │     d. Generate notification if triggered                            │   │
+│  │  4. Deduplicate and publish notifications                            │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                           │                                                 │
+│                           ▼                                                 │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                  PLUGGABLE CONDITION EVALUATORS                      │   │
+│  │                                                                       │   │
+│  │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐  │   │
+│  │  │ geofence │ │ compare  │ │  change  │ │  range   │ │composite │  │   │
+│  │  │          │ │ (>,<,=)  │ │ (detect) │ │ (min/max)│ │ (AND/OR) │  │   │
+│  │  └──────────┘ └──────────┘ └──────────┘ └──────────┘ └──────────┘  │   │
+│  │                                                                       │   │
+│  │  New evaluators can be added as plugins without schema changes       │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### 5.3.1 Notification Type Definitions
+
+Notification types are defined as configuration records, not hardcoded in the system:
+
+```typescript
+interface NotificationTypeDefinition {
+  typeId: string;           // Unique identifier, e.g., "geofence_alert"
+  name: string;             // Human-readable name
+  description: string;
+  dataSource: string;       // Event source: "vessel.state", "fixture", etc.
+
+  // JSON Schema defining what conditions this type supports
+  conditionSchema: {
+    evaluator: string;      // Which evaluator to use
+    parameters: JSONSchema; // Parameters the evaluator accepts
+  };
+
+  // What filters can be applied
+  filterSchema: JSONSchema;
+
+  // Notification template
+  defaultTemplate: {
+    title: string;          // Template with {{variables}}
+    message: string;
+  };
+
+  // State tracking requirements
+  stateTracking?: {
+    enabled: boolean;
+    transitionEvents: ('enter' | 'exit' | 'change')[];
+  };
+}
+```
+
+**Example Type Definitions:**
+
+```json
+[
+  {
+    "typeId": "geofence_alert",
+    "name": "Geofence Alert",
+    "dataSource": "vessel.state",
+    "conditionSchema": {
+      "evaluator": "geofence",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "polygonId": { "type": "string" },
+          "triggerOn": { "enum": ["enter", "exit", "both"] }
+        }
+      }
+    },
+    "stateTracking": { "enabled": true, "transitionEvents": ["enter", "exit"] },
+    "defaultTemplate": {
+      "title": "Vessel {{triggerOn}} {{geofenceName}}",
+      "message": "{{vesselName}} (IMO: {{imo}}) has {{triggerOn}} {{geofenceName}}"
+    }
+  },
+  {
+    "typeId": "speed_alert",
+    "name": "Speed Alert",
+    "dataSource": "vessel.state",
+    "conditionSchema": {
+      "evaluator": "compare",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "field": { "const": "Speed" },
+          "operator": { "enum": ["gt", "lt", "eq", "gte", "lte"] },
+          "value": { "type": "number" }
+        }
+      }
+    },
+    "defaultTemplate": {
+      "title": "Speed Alert: {{vesselName}}",
+      "message": "{{vesselName}} speed is {{speed}} knots (threshold: {{operator}} {{value}})"
+    }
+  },
+  {
+    "typeId": "status_change",
+    "name": "Vessel Status Change",
+    "dataSource": "vessel.state",
+    "conditionSchema": {
+      "evaluator": "change",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "field": { "type": "string" },
+          "from": { "type": "array", "items": { "type": "string" } },
+          "to": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "stateTracking": { "enabled": true, "transitionEvents": ["change"] },
+    "defaultTemplate": {
+      "title": "Status Changed: {{vesselName}}",
+      "message": "{{vesselName}} status changed from {{previousValue}} to {{currentValue}}"
+    }
+  },
+  {
+    "typeId": "fixture_rate_change",
+    "name": "Fixture Rate Alert",
+    "dataSource": "fixture",
+    "conditionSchema": {
+      "evaluator": "compare",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "field": { "const": "rate" },
+          "operator": { "enum": ["gt", "lt", "change_percent"] },
+          "value": { "type": "number" }
+        }
+      }
+    },
+    "defaultTemplate": {
+      "title": "Fixture Rate Change",
+      "message": "Rate changed to {{rate}} ({{changePercent}}% change)"
+    }
+  },
+  {
+    "typeId": "destination_change",
+    "name": "Destination Change Alert",
+    "dataSource": "vessel.state",
+    "conditionSchema": {
+      "evaluator": "change",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "field": { "enum": ["AISDestination", "AISDestinationPortID"] },
+          "to": { "type": "array", "items": { "type": "string" }, "description": "Optional: specific destinations to watch. Empty = any change" }
+        },
+        "required": ["field"]
+      }
+    },
+    "stateTracking": { "enabled": true, "transitionEvents": ["change"] },
+    "defaultTemplate": {
+      "title": "Destination Changed: {{vesselName}}",
+      "message": "{{vesselName}} (IMO: {{imo}}) destination changed from \"{{previousValue}}\" to \"{{currentValue}}\""
+    }
+  }
+]
+```
+
+#### 5.3.2 Client Rule Configuration
+
+Clients create rules by referencing type definitions:
+
+```typescript
+interface ClientRule {
+  id: string;
+  clientId: string;
+  typeId: string;              // References NotificationTypeDefinition
+  name: string;
+
+  // Condition parameters (validated against type's conditionSchema)
+  condition: Record<string, any>;
+
+  // Entity filters
+  filters?: {
+    imos?: number[];
+    vesselTypes?: string[];
+    vesselClasses?: string[];
+    trades?: string[];
+    areas?: string[];
+  };
+
+  // Client-specific settings
+  settings?: {
+    cooldownMinutes?: number;  // Min time between notifications
+    priority?: 'low' | 'medium' | 'high';
+    channels?: ('web' | 'mobile' | 'email')[];
+  };
+
+  isActive: boolean;
+}
+```
+
+**Example Client Rules:**
+
+```json
+[
+  {
+    "id": "rule-001",
+    "clientId": "client-123",
+    "typeId": "geofence_alert",
+    "name": "Singapore Strait Watch",
+    "condition": {
+      "polygonId": "geofence-sg-strait",
+      "triggerOn": "both"
+    },
+    "filters": {
+      "vesselTypes": ["Tanker", "Container"]
+    },
+    "settings": {
+      "priority": "high",
+      "channels": ["web", "mobile"]
+    },
+    "isActive": true
+  },
+  {
+    "id": "rule-002",
+    "clientId": "client-123",
+    "typeId": "speed_alert",
+    "name": "High Speed Tanker Alert",
+    "condition": {
+      "field": "Speed",
+      "operator": "gt",
+      "value": 18
+    },
+    "filters": {
+      "vesselTypes": ["Tanker"]
+    },
+    "isActive": true
+  },
+  {
+    "id": "rule-003",
+    "clientId": "client-456",
+    "typeId": "status_change",
+    "name": "Voyage Status Change",
+    "condition": {
+      "field": "VesselVoyageStatus",
+      "to": ["Discharging", "Loading"]
+    },
+    "filters": {
+      "imos": [9865556, 9812345]
+    },
+    "isActive": true
+  },
+  {
+    "id": "rule-004",
+    "clientId": "client-123",
+    "typeId": "destination_change",
+    "name": "Any Destination Change - My Fleet",
+    "condition": {
+      "field": "AISDestination"
+    },
+    "filters": {
+      "imos": [9865556, 9812345, 9876543]
+    },
+    "settings": {
+      "priority": "medium"
+    },
+    "isActive": true
+  },
+  {
+    "id": "rule-005",
+    "clientId": "client-456",
+    "typeId": "destination_change",
+    "name": "Vessels Heading to Singapore",
+    "condition": {
+      "field": "AISDestination",
+      "to": ["SG", "SGSIN", "SINGAPORE", "SG SIN"]
+    },
+    "filters": {
+      "vesselTypes": ["Tanker", "Container"]
+    },
+    "isActive": true
+  }
+]
+```
+
+#### 5.3.3 Condition Evaluators
+
+Evaluators are pluggable functions that implement a common interface:
+
+```typescript
+interface ConditionEvaluator {
+  id: string;
+
+  // Evaluate the condition against incoming data
+  evaluate(
+    data: Record<string, any>,           // Incoming event data
+    condition: Record<string, any>,       // Rule condition parameters
+    previousState?: Record<string, any>   // Previous state (for transitions)
+  ): EvaluationResult;
+}
+
+interface EvaluationResult {
+  triggered: boolean;
+  transition?: 'enter' | 'exit' | 'change' | null;
+  context?: Record<string, any>;  // Additional data for notification
+}
+```
+
+**Built-in Evaluators:**
+
+| Evaluator | Purpose | Example Condition |
+|-----------|---------|-------------------|
+| `geofence` | Point-in-polygon check | `{ "polygonId": "...", "triggerOn": "enter" }` |
+| `compare` | Field comparison | `{ "field": "Speed", "operator": "gt", "value": 15 }` |
+| `change` | Detect value changes | `{ "field": "VesselStatus", "from": ["A"], "to": ["B"] }` |
+| `range` | Value within range | `{ "field": "Draught", "min": 10, "max": 15 }` |
+| `composite` | Combine conditions | `{ "operator": "AND", "conditions": [...] }` |
+| `regex` | Pattern matching | `{ "field": "AISDestination", "pattern": "^SG.*" }` |
+
+**Adding a New Evaluator (No Schema Changes):**
+
+```typescript
+// evaluators/proximity.ts - New evaluator for vessel proximity
+const proximityEvaluator: ConditionEvaluator = {
+  id: 'proximity',
+
+  evaluate(data, condition, previousState) {
+    const { targetImo, distanceNm } = condition;
+    const targetVessel = getVesselPosition(targetImo);
+    const distance = calculateDistance(
+      data.Latitude, data.Longitude,
+      targetVessel.lat, targetVessel.lng
+    );
+
+    const wasClose = previousState?.isClose ?? false;
+    const isClose = distance <= distanceNm;
+
+    return {
+      triggered: isClose !== wasClose,
+      transition: isClose ? 'enter' : 'exit',
+      context: { distance, targetImo }
+    };
+  }
+};
+
+// Register the evaluator
+evaluatorRegistry.register(proximityEvaluator);
+```
+
+Then add a notification type definition (via API, no code deploy):
+
+```json
+{
+  "typeId": "proximity_alert",
+  "name": "Vessel Proximity Alert",
+  "dataSource": "vessel.state",
+  "conditionSchema": {
+    "evaluator": "proximity",
+    "parameters": {
+      "properties": {
+        "targetImo": { "type": "number" },
+        "distanceNm": { "type": "number" }
+      }
+    }
+  }
+}
+```
+
+#### 5.3.4 Rules Engine Flow
+
+```typescript
+async function processEvent(event: DataEvent): Promise<void> {
+  // 1. Get all active rules for this data source
+  const rules = await ruleRepository.findActive({
+    dataSource: event.source,  // e.g., "vessel.state"
+  });
+
+  // 2. Process each rule
+  for (const rule of rules) {
+    // 2a. Apply entity filters
+    if (!matchesFilters(event.data, rule.filters)) {
+      continue;
+    }
+
+    // 2b. Get the notification type definition
+    const typeDef = await typeRegistry.get(rule.typeId);
+
+    // 2c. Get the evaluator
+    const evaluator = evaluatorRegistry.get(typeDef.conditionSchema.evaluator);
+
+    // 2d. Get previous state if state tracking is enabled
+    const previousState = typeDef.stateTracking?.enabled
+      ? await stateStore.get(rule.id, event.data.IMO)
+      : undefined;
+
+    // 2e. Evaluate the condition
+    const result = evaluator.evaluate(event.data, rule.condition, previousState);
+
+    // 2f. Update state
+    if (typeDef.stateTracking?.enabled) {
+      await stateStore.set(rule.id, event.data.IMO, {
+        ...result.context,
+        lastEvaluated: new Date()
+      });
+    }
+
+    // 2g. Generate notification if triggered
+    if (result.triggered) {
+      const notification = buildNotification(rule, typeDef, event.data, result);
+      await notificationService.send(notification);
+    }
+  }
+}
 ```
 
 ---
@@ -714,9 +1354,18 @@ interface WebSocketServerEvents {
 
 ## 11. Database Schema
 
-### 11.1 PostgreSQL Schema
+### 11.1 Extensible Schema Design
+
+The schema is designed so that new notification types can be added without schema changes.
+All type-specific configuration is stored in JSONB columns.
+
+### 11.2 PostgreSQL Schema
 
 ```sql
+-- ============================================================================
+-- CORE TABLES (rarely change)
+-- ============================================================================
+
 -- Clients table
 CREATE TABLE clients (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -727,15 +1376,97 @@ CREATE TABLE clients (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Geofences table (with PostGIS)
+-- ============================================================================
+-- EXTENSIBLE NOTIFICATION TYPE SYSTEM (no schema changes needed for new types)
+-- ============================================================================
+
+-- Notification type definitions (admin-managed, defines what types exist)
+-- Adding a new notification type = INSERT, not schema change
+CREATE TABLE notification_types (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    type_id VARCHAR(100) UNIQUE NOT NULL,           -- e.g., "geofence_alert", "speed_alert"
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    data_source VARCHAR(100) NOT NULL,              -- e.g., "vessel.state", "fixture"
+
+    -- JSON Schema defining valid condition parameters for this type
+    condition_schema JSONB NOT NULL,
+
+    -- JSON Schema defining valid filter options
+    filter_schema JSONB DEFAULT '{}',
+
+    -- Default notification template (supports {{variable}} syntax)
+    default_template JSONB NOT NULL,
+    -- Example: {"title": "Vessel {{action}} {{geofenceName}}", "message": "..."}
+
+    -- State tracking configuration
+    state_tracking JSONB DEFAULT '{"enabled": false}',
+    -- Example: {"enabled": true, "transitionEvents": ["enter", "exit"]}
+
+    -- UI hints for rule builder
+    ui_schema JSONB DEFAULT '{}',
+
+    is_system BOOLEAN DEFAULT false,                -- true = cannot be deleted
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX idx_notification_types_type_id ON notification_types(type_id);
+CREATE INDEX idx_notification_types_data_source ON notification_types(data_source);
+
+-- Client rules (generic structure, works with any notification type)
+CREATE TABLE client_rules (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    type_id VARCHAR(100) NOT NULL REFERENCES notification_types(type_id),
+    name VARCHAR(255) NOT NULL,
+
+    -- Condition parameters (validated against notification_types.condition_schema)
+    condition JSONB NOT NULL,
+    -- Example: {"polygonId": "abc", "triggerOn": "enter"}
+    -- Example: {"field": "Speed", "operator": "gt", "value": 15}
+
+    -- Entity filters (which vessels/entities this rule applies to)
+    filters JSONB DEFAULT '{}',
+    -- Example: {"vesselTypes": ["Tanker"], "imos": [123, 456]}
+
+    -- Client-specific settings
+    settings JSONB DEFAULT '{}',
+    -- Example: {"cooldownMinutes": 30, "priority": "high", "channels": ["web"]}
+
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX idx_client_rules_client ON client_rules(client_id);
+CREATE INDEX idx_client_rules_type ON client_rules(type_id);
+CREATE INDEX idx_client_rules_active ON client_rules(is_active) WHERE is_active = true;
+
+-- ============================================================================
+-- GEOFENCES (special case - needs geometry support)
+-- ============================================================================
+
+-- Geofences table (with PostGIS for spatial queries)
 CREATE TABLE geofences (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
     name VARCHAR(255) NOT NULL,
-    type VARCHAR(20) NOT NULL CHECK (type IN ('polygon', 'circle')),
+    description TEXT,
+
+    -- Geometry type and data
+    geofence_type VARCHAR(20) NOT NULL CHECK (geofence_type IN ('polygon', 'circle')),
     geometry GEOMETRY(GEOMETRY, 4326) NOT NULL,
-    trigger_on VARCHAR(20) NOT NULL CHECK (trigger_on IN ('enter', 'exit', 'both')),
-    vessel_filters JSONB DEFAULT '{}',
+
+    -- For circles: store center and radius separately for easy access
+    center_lat DOUBLE PRECISION,
+    center_lng DOUBLE PRECISION,
+    radius_km DOUBLE PRECISION,
+
+    -- Metadata
+    metadata JSONB DEFAULT '{}',
+
     is_active BOOLEAN DEFAULT true,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -744,45 +1475,230 @@ CREATE TABLE geofences (
 CREATE INDEX idx_geofences_client ON geofences(client_id);
 CREATE INDEX idx_geofences_geometry ON geofences USING GIST(geometry);
 
--- Notification rules table
-CREATE TABLE notification_rules (
+-- ============================================================================
+-- STATE TRACKING (for enter/exit detection)
+-- ============================================================================
+
+-- Rule state tracking (for detecting transitions)
+CREATE TABLE rule_state (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
-    name VARCHAR(255) NOT NULL,
-    type VARCHAR(50) NOT NULL,
-    config JSONB NOT NULL,
-    geofence_id UUID REFERENCES geofences(id) ON DELETE CASCADE,
-    vessel_filters JSONB DEFAULT '{}',
-    is_active BOOLEAN DEFAULT true,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    rule_id UUID NOT NULL REFERENCES client_rules(id) ON DELETE CASCADE,
+    entity_id VARCHAR(100) NOT NULL,                -- e.g., IMO number
+
+    -- Current state (flexible JSONB for any evaluator)
+    state JSONB NOT NULL,
+    -- Example for geofence: {"isInside": true, "enteredAt": "..."}
+    -- Example for change: {"previousValue": "Loading", "currentValue": "Discharging"}
+
+    last_evaluated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+
+    UNIQUE(rule_id, entity_id)
 );
 
-CREATE INDEX idx_rules_client ON notification_rules(client_id);
-CREATE INDEX idx_rules_type ON notification_rules(type);
+CREATE INDEX idx_rule_state_rule ON rule_state(rule_id);
+CREATE INDEX idx_rule_state_entity ON rule_state(entity_id);
 
--- Notifications table (partitioned by date for efficient cleanup)
+-- ============================================================================
+-- NOTIFICATIONS (generic, works with any type)
+-- ============================================================================
+
+-- Notifications table
 CREATE TABLE notifications (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
-    rule_id UUID REFERENCES notification_rules(id) ON DELETE SET NULL,
-    type VARCHAR(50) NOT NULL,
-    title VARCHAR(255) NOT NULL,
+    rule_id UUID REFERENCES client_rules(id) ON DELETE SET NULL,
+    type_id VARCHAR(100) NOT NULL,
+
+    -- Notification content
+    title VARCHAR(500) NOT NULL,
     message TEXT NOT NULL,
-    data JSONB NOT NULL,
+
+    -- All contextual data (flexible JSONB)
+    payload JSONB NOT NULL,
+    -- Example: {"vesselName": "...", "imo": 123, "geofenceName": "...", "action": "entered"}
+
+    -- Delivery tracking
+    priority VARCHAR(20) DEFAULT 'medium',
     status VARCHAR(20) DEFAULT 'pending',
     delivered_at TIMESTAMP WITH TIME ZONE,
     read_at TIMESTAMP WITH TIME ZONE,
+
+    -- Timestamps
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     expires_at TIMESTAMP WITH TIME ZONE DEFAULT (NOW() + INTERVAL '7 days')
-) PARTITION BY RANGE (created_at);
-
--- Create partitions for each day (automated via pg_partman or cron)
-CREATE TABLE notifications_2024_01 PARTITION OF notifications
-    FOR VALUES FROM ('2024-01-01') TO ('2024-02-01');
+);
 
 CREATE INDEX idx_notifications_client_status ON notifications(client_id, status);
-CREATE INDEX idx_notifications_created ON notifications(created_at);
+CREATE INDEX idx_notifications_type ON notifications(type_id);
+CREATE INDEX idx_notifications_created ON notifications(created_at DESC);
+
+-- ============================================================================
+-- SEED DATA: Built-in notification types
+-- ============================================================================
+
+INSERT INTO notification_types (type_id, name, description, data_source, condition_schema, default_template, state_tracking, is_system) VALUES
+(
+    'geofence_alert',
+    'Geofence Alert',
+    'Triggered when a vessel enters or exits a defined geographic area',
+    'vessel.state',
+    '{
+        "evaluator": "geofence",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "geofenceId": {"type": "string"},
+                "triggerOn": {"enum": ["enter", "exit", "both"]}
+            },
+            "required": ["geofenceId", "triggerOn"]
+        }
+    }',
+    '{
+        "title": "Vessel {{action}} {{geofenceName}}",
+        "message": "{{vesselName}} (IMO: {{imo}}) has {{action}} the geofence \"{{geofenceName}}\" at {{timestamp}}"
+    }',
+    '{"enabled": true, "transitionEvents": ["enter", "exit"]}',
+    true
+),
+(
+    'speed_alert',
+    'Speed Alert',
+    'Triggered when vessel speed crosses a threshold',
+    'vessel.state',
+    '{
+        "evaluator": "compare",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "field": {"const": "Speed"},
+                "operator": {"enum": ["gt", "lt", "gte", "lte", "eq"]},
+                "value": {"type": "number", "minimum": 0}
+            },
+            "required": ["field", "operator", "value"]
+        }
+    }',
+    '{
+        "title": "Speed Alert: {{vesselName}}",
+        "message": "{{vesselName}} (IMO: {{imo}}) speed is {{currentValue}} knots (threshold: {{operator}} {{threshold}})"
+    }',
+    '{"enabled": false}',
+    true
+),
+(
+    'status_change',
+    'Vessel Status Change',
+    'Triggered when a vessel status changes',
+    'vessel.state',
+    '{
+        "evaluator": "change",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "field": {"type": "string"},
+                "from": {"type": "array", "items": {"type": "string"}},
+                "to": {"type": "array", "items": {"type": "string"}}
+            },
+            "required": ["field"]
+        }
+    }',
+    '{
+        "title": "Status Change: {{vesselName}}",
+        "message": "{{vesselName}} (IMO: {{imo}}) {{field}} changed from \"{{previousValue}}\" to \"{{currentValue}}\""
+    }',
+    '{"enabled": true, "transitionEvents": ["change"]}',
+    true
+),
+(
+    'area_change',
+    'Area Change Alert',
+    'Triggered when a vessel moves to a different area',
+    'vessel.state',
+    '{
+        "evaluator": "change",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "field": {"enum": ["AreaName", "AreaNameLevel1", "AreaNameLevel2"]},
+                "to": {"type": "array", "items": {"type": "string"}}
+            },
+            "required": ["field"]
+        }
+    }',
+    '{
+        "title": "Area Change: {{vesselName}}",
+        "message": "{{vesselName}} (IMO: {{imo}}) has entered {{currentValue}}"
+    }',
+    '{"enabled": true, "transitionEvents": ["change"]}',
+    true
+),
+(
+    'destination_change',
+    'Destination Change Alert',
+    'Triggered when a vessel changes its reported destination (AIS destination)',
+    'vessel.state',
+    '{
+        "evaluator": "change",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "field": {"enum": ["AISDestination", "AISDestinationPortID"]},
+                "to": {"type": "array", "items": {"type": "string"}, "description": "Optional: specific destinations. Empty = any change"}
+            },
+            "required": ["field"]
+        }
+    }',
+    '{
+        "title": "Destination Changed: {{vesselName}}",
+        "message": "{{vesselName}} (IMO: {{imo}}) destination changed from \"{{previousValue}}\" to \"{{currentValue}}\""
+    }',
+    '{"enabled": true, "transitionEvents": ["change"]}',
+    true
+);
+```
+
+### 11.3 Schema Extensibility Examples
+
+**Adding a new notification type (no code deployment needed):**
+
+```sql
+-- Example: Add a "Draught Alert" notification type via API or admin UI
+INSERT INTO notification_types (type_id, name, description, data_source, condition_schema, default_template)
+VALUES (
+    'draught_alert',
+    'Draught Alert',
+    'Triggered when vessel draught exceeds threshold',
+    'vessel.state',
+    '{
+        "evaluator": "compare",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "field": {"const": "Draught"},
+                "operator": {"enum": ["gt", "lt"]},
+                "value": {"type": "number"}
+            }
+        }
+    }',
+    '{
+        "title": "Draught Alert: {{vesselName}}",
+        "message": "{{vesselName}} draught is {{currentValue}}m"
+    }'
+);
+
+-- Now clients can immediately create rules using this new type!
+```
+
+**Client creating a rule for the new type:**
+
+```sql
+INSERT INTO client_rules (client_id, type_id, name, condition, filters)
+VALUES (
+    'client-123',
+    'draught_alert',
+    'Deep Draught Tankers',
+    '{"field": "Draught", "operator": "gt", "value": 15}',
+    '{"vesselTypes": ["Tanker"]}'
+);
 ```
 
 ---
@@ -1241,7 +2157,226 @@ const vessels = [
 
 ---
 
-## 17. Cost Estimates (Cloud Deployment)
+## 17. MVP AWS Deployment (Simplest)
+
+### 17.1 Deployment Strategy
+
+For the 1-day prototype, use a **single EC2 instance running Docker Compose** - identical to local development with minimal changes.
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         AWS MVP DEPLOYMENT                                   │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│                           ┌─────────────────┐                               │
+│                           │   Route 53      │                               │
+│                           │ (Optional DNS)  │                               │
+│                           └────────┬────────┘                               │
+│                                    │                                        │
+│                                    ▼                                        │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │                     EC2 Instance (t3.medium)                          │  │
+│  │                                                                        │  │
+│  │  ┌─────────────────────────────────────────────────────────────────┐ │  │
+│  │  │                    Docker Compose                                │ │  │
+│  │  │                                                                   │ │  │
+│  │  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐ │ │  │
+│  │  │  │   Kafka     │  │  Next.js    │  │   Mock Producer         │ │ │  │
+│  │  │  │   (KRaft)   │  │  App:3000   │  │   (Node.js)             │ │ │  │
+│  │  │  │   :9092     │  │  + Socket.io│  │                         │ │ │  │
+│  │  │  └─────────────┘  └─────────────┘  └─────────────────────────┘ │ │  │
+│  │  │                                                                   │ │  │
+│  │  │  ┌─────────────────────────────────────────────────────────────┐ │ │  │
+│  │  │  │              SQLite (file in Docker volume)                  │ │ │  │
+│  │  │  └─────────────────────────────────────────────────────────────┘ │ │  │
+│  │  └─────────────────────────────────────────────────────────────────┘ │  │
+│  │                                                                        │  │
+│  │  Security Group: Inbound 80, 443, 22                                  │  │
+│  │  Elastic IP: For stable public address                                │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 17.2 Code Changes Required for AWS
+
+**Minimal changes - all via environment variables:**
+
+```bash
+# .env.production (AWS)
+NODE_ENV=production
+NEXT_PUBLIC_APP_URL=https://your-domain.com      # Or http://ec2-ip:3000
+NEXT_PUBLIC_WS_URL=wss://your-domain.com         # WebSocket URL
+DATABASE_URL=file:./data/prod.db                 # SQLite path
+KAFKA_BROKERS=kafka:9092                         # Internal Docker network
+```
+
+**Changes to implement during prototype:**
+
+1. **Environment-based configuration** (already best practice)
+```typescript
+// lib/config.ts
+export const config = {
+  appUrl: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
+  wsUrl: process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:3000',
+  kafkaBrokers: (process.env.KAFKA_BROKERS || 'localhost:9092').split(','),
+};
+```
+
+2. **CORS configuration** for production domain
+```typescript
+// next.config.js
+module.exports = {
+  async headers() {
+    return [
+      {
+        source: '/api/:path*',
+        headers: [
+          { key: 'Access-Control-Allow-Origin', value: process.env.ALLOWED_ORIGIN || '*' },
+        ],
+      },
+    ];
+  },
+};
+```
+
+3. **Socket.io CORS**
+```typescript
+// lib/socket.ts
+const io = new Server(server, {
+  cors: {
+    origin: process.env.ALLOWED_ORIGIN || '*',
+    methods: ['GET', 'POST'],
+  },
+});
+```
+
+### 17.3 AWS Deployment Steps
+
+```bash
+# 1. Launch EC2 instance
+#    - AMI: Amazon Linux 2023 or Ubuntu 22.04
+#    - Instance type: t3.medium (2 vCPU, 4GB RAM)
+#    - Storage: 30GB gp3
+#    - Security Group: Allow 22 (SSH), 80 (HTTP), 443 (HTTPS)
+
+# 2. SSH into instance
+ssh -i your-key.pem ec2-user@your-ec2-ip
+
+# 3. Install Docker and Docker Compose
+sudo yum update -y
+sudo yum install -y docker
+sudo systemctl start docker
+sudo systemctl enable docker
+sudo usermod -aG docker ec2-user
+
+# Install Docker Compose
+sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+sudo chmod +x /usr/local/bin/docker-compose
+
+# 4. Clone repository
+git clone https://github.com/fanwu/maritime-notification.git
+cd maritime-notification
+
+# 5. Create production environment file
+cat > .env.production << EOF
+NODE_ENV=production
+NEXT_PUBLIC_APP_URL=http://$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4):3000
+NEXT_PUBLIC_WS_URL=ws://$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4):3000
+EOF
+
+# 6. Start services
+docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+# 7. View logs
+docker-compose logs -f
+```
+
+### 17.4 Docker Compose Production Override
+
+```yaml
+# docker-compose.prod.yml
+version: '3.8'
+
+services:
+  web:
+    environment:
+      - NODE_ENV=production
+    restart: always
+
+  kafka:
+    restart: always
+
+  mock-producer:
+    restart: always
+```
+
+### 17.5 Optional: Add HTTPS with Caddy
+
+For production with HTTPS, add Caddy as reverse proxy:
+
+```yaml
+# docker-compose.prod.yml (with HTTPS)
+services:
+  caddy:
+    image: caddy:2
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+    depends_on:
+      - web
+
+  web:
+    ports: []  # Remove public port, only expose internally
+    expose:
+      - "3000"
+
+volumes:
+  caddy_data:
+```
+
+```
+# Caddyfile
+your-domain.com {
+    reverse_proxy web:3000
+}
+```
+
+### 17.6 MVP AWS Cost Estimate
+
+| Resource | Specification | Monthly Cost |
+|----------|---------------|--------------|
+| EC2 | t3.medium (on-demand) | ~$30 |
+| EBS | 30GB gp3 | ~$3 |
+| Elastic IP | 1 IP | ~$4 |
+| Data Transfer | ~10GB | ~$1 |
+| **Total** | | **~$38/month** |
+
+*Use Reserved Instance or Spot for further savings.*
+
+### 17.7 Scaling Beyond MVP
+
+When ready to scale, migrate to:
+
+| Component | MVP | Production |
+|-----------|-----|------------|
+| Compute | Single EC2 | ECS Fargate / EKS |
+| Database | SQLite | RDS PostgreSQL |
+| Kafka | Docker | Amazon MSK |
+| Cache | In-memory | ElastiCache Redis |
+| Load Balancer | None | ALB |
+
+The code changes for this migration are minimal because:
+- Prisma abstracts database (change connection string)
+- KafkaJS works with MSK (change broker URLs)
+- Socket.io works behind ALB with sticky sessions
+
+---
+
+## 18. Cost Estimates (Production Deployment)
 
 | Service | Specification | Est. Monthly Cost |
 |---------|---------------|-------------------|
