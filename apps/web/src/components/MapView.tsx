@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
 import mapboxgl from 'mapbox-gl';
 import MapboxDraw from '@mapbox/mapbox-gl-draw';
 import 'mapbox-gl/dist/mapbox-gl.css';
@@ -8,13 +8,18 @@ import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
 import type { VesselState, Geofence } from '@/types';
 import { config } from '@/lib/config';
 
+export interface MapViewHandle {
+  focusVessel: (imo: number) => void;
+}
+
 interface MapViewProps {
   vessels: VesselState[];
   geofences: Geofence[];
   onGeofenceCreate: (geofence: Omit<Geofence, 'id'>) => void;
+  onMapReady?: (handle: MapViewHandle) => void;
 }
 
-export default function MapView({ vessels, geofences, onGeofenceCreate }: MapViewProps) {
+const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView({ vessels, geofences, onGeofenceCreate, onMapReady }, ref) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const draw = useRef<MapboxDraw | null>(null);
@@ -24,6 +29,54 @@ export default function MapView({ vessels, geofences, onGeofenceCreate }: MapVie
   const [pendingGeofence, setPendingGeofence] = useState<[number, number][] | null>(null);
   const [geofenceName, setGeofenceName] = useState('');
   const [mapLoaded, setMapLoaded] = useState(false);
+
+  // Create the handle object
+  const handleRef = useRef<MapViewHandle>({
+    focusVessel: (imo: number) => {
+      console.log('[MapView] focusVessel called with IMO:', imo);
+      const marker = markers.current.get(imo);
+      if (marker && map.current) {
+        const lngLat = marker.getLngLat();
+        console.log('[MapView] Found marker at:', lngLat);
+
+        // Close all other popups first
+        markers.current.forEach((m) => {
+          const popup = m.getPopup();
+          if (popup && popup.isOpen()) {
+            m.togglePopup();
+          }
+        });
+
+        // Pan to vessel location
+        map.current.flyTo({
+          center: [lngLat.lng, lngLat.lat],
+          zoom: 10,
+          duration: 1000,
+        });
+
+        // Open the popup after fly animation
+        setTimeout(() => {
+          const popup = marker.getPopup();
+          if (popup && !popup.isOpen()) {
+            marker.togglePopup();
+          }
+        }, 1100);
+      } else {
+        console.log('[MapView] Marker not found for IMO:', imo, 'Available:', Array.from(markers.current.keys()));
+      }
+    },
+  });
+
+  // Expose via ref
+  useImperativeHandle(ref, () => handleRef.current, []);
+
+  // Also notify parent via callback
+  useEffect(() => {
+    if (onMapReady) {
+      console.log('[MapView] Calling onMapReady');
+      onMapReady(handleRef.current);
+    }
+  }, [onMapReady]);
 
   // Initialize map
   useEffect(() => {
@@ -309,4 +362,6 @@ export default function MapView({ vessels, geofences, onGeofenceCreate }: MapVie
       )}
     </>
   );
-}
+});
+
+export default MapView;

@@ -7,12 +7,14 @@ interface NotificationCenterProps {
   notifications: Notification[];
   onMarkAsRead: (id: string) => void;
   onClose: () => void;
+  onVesselClick?: (imo: number) => void;
 }
 
 export default function NotificationCenter({
   notifications,
   onMarkAsRead,
   onClose,
+  onVesselClick,
 }: NotificationCenterProps) {
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
   const markedAsReadRef = useRef<Set<string>>(new Set());
@@ -176,7 +178,19 @@ export default function NotificationCenter({
                     </span>
                   </div>
                   <h3 className="font-medium text-gray-900 truncate">
-                    {notification.title}
+                    {onVesselClick && notification.payload?.imo ? (
+                      <button
+                        onClick={() => {
+                          console.log('[NotificationCenter] Vessel clicked:', notification.payload!.imo);
+                          onVesselClick(notification.payload!.imo as number);
+                        }}
+                        className="text-blue-600 hover:text-blue-800 hover:underline text-left"
+                      >
+                        {notification.title}
+                      </button>
+                    ) : (
+                      notification.title
+                    )}
                   </h3>
                   <p className="text-sm text-gray-600 mt-1">
                     {notification.message}

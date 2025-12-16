@@ -1,11 +1,13 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { io, Socket } from 'socket.io-client';
 import type { Notification, VesselState, Geofence } from '@/types';
+import type { MapViewHandle } from '@/components/MapView';
 import NotificationCenter from '@/components/NotificationCenter';
 import GeofenceList from '@/components/GeofenceList';
+import NotificationSettings from '@/components/NotificationSettings';
 
 // Dynamic import for map to avoid SSR issues
 const MapView = dynamic(() => import('@/components/MapView'), {
@@ -20,12 +22,15 @@ const MapView = dynamic(() => import('@/components/MapView'), {
 const CLIENT_ID = 'demo-client';
 
 export default function Home() {
+  const mapRef = useRef<MapViewHandle>(null);
+  const mapHandleRef = useRef<MapViewHandle | null>(null);
   const [socket, setSocket] = useState<Socket | null>(null);
   const [vessels, setVessels] = useState<Map<number, VesselState>>(new Map());
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [geofences, setGeofences] = useState<Geofence[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
 
   // Fetch initial data
@@ -129,6 +134,20 @@ export default function Home() {
     }
   }, []);
 
+  const handleMapReady = useCallback((handle: MapViewHandle) => {
+    console.log('[Page] Map ready, received handle');
+    mapHandleRef.current = handle;
+  }, []);
+
+  const handleVesselClick = useCallback((imo: number) => {
+    console.log('[Page] Vessel clicked, IMO:', imo, 'mapHandleRef:', mapHandleRef.current);
+    if (mapHandleRef.current) {
+      mapHandleRef.current.focusVessel(imo);
+    } else {
+      console.log('[Page] mapHandleRef.current is null');
+    }
+  }, []);
+
   return (
     <div className="flex h-screen">
       {/* Sidebar */}
@@ -159,8 +178,8 @@ export default function Home() {
           />
         </div>
 
-        {/* Notification toggle */}
-        <div className="p-4 border-t">
+        {/* Buttons */}
+        <div className="p-4 border-t space-y-2">
           <button
             onClick={() => setShowNotifications(!showNotifications)}
             className="w-full flex items-center justify-between px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition"
@@ -172,15 +191,24 @@ export default function Home() {
               </span>
             )}
           </button>
+          <button
+            onClick={() => setShowSettings(true)}
+            className="w-full flex items-center justify-center px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition"
+          >
+            <span className="mr-2">⚙️</span>
+            <span>Notification Settings</span>
+          </button>
         </div>
       </div>
 
       {/* Map */}
       <div className="flex-1 relative">
         <MapView
+          ref={mapRef}
           vessels={Array.from(vessels.values())}
           geofences={geofences}
           onGeofenceCreate={handleGeofenceCreate}
+          onMapReady={handleMapReady}
         />
       </div>
 
@@ -191,8 +219,20 @@ export default function Home() {
             notifications={notifications}
             onMarkAsRead={handleMarkAsRead}
             onClose={() => setShowNotifications(false)}
+            onVesselClick={handleVesselClick}
           />
         </div>
+      )}
+
+      {/* Notification Settings Modal */}
+      {showSettings && (
+        <NotificationSettings
+          clientId={CLIENT_ID}
+          onClose={() => setShowSettings(false)}
+          onSave={() => {
+            console.log('Preferences saved - server will apply on next cache refresh');
+          }}
+        />
       )}
     </div>
   );
