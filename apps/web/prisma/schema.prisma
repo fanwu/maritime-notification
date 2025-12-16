@@ -1,0 +1,123 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Notification type definitions (admin-managed)
+// Adding a new notification type = INSERT, not schema change
+model NotificationType {
+  id              String   @id @default(uuid())
+  typeId          String   @unique // e.g., "geofence_alert", "speed_alert"
+  name            String
+  description     String?
+  dataSource      String   // e.g., "vessel.state", "fixture"
+  conditionSchema String   // JSON: schema for condition validation
+  filterSchema    String   @default("{}") // JSON: schema for filter validation
+  defaultTemplate String   // JSON: {title, message} templates
+  stateTracking   String   @default("{\"enabled\": false}") // JSON
+  uiSchema        String   @default("{}") // JSON: UI hints for rule builder
+  isSystem        Boolean  @default(false)
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  rules ClientRule[]
+}
+
+// Client rules (generic structure, works with any notification type)
+model ClientRule {
+  id        String   @id @default(uuid())
+  clientId  String   // For multi-tenancy
+  typeId    String
+  name      String
+  condition String   // JSON: condition parameters
+  filters   String   @default("{}") // JSON: entity filters
+  settings  String   @default("{}") // JSON: client-specific settings
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  type          NotificationType @relation(fields: [typeId], references: [typeId])
+  notifications Notification[]
+  ruleStates    RuleState[]
+  geofence      Geofence?        @relation(fields: [geofenceId], references: [id])
+  geofenceId    String?
+
+  @@index([clientId])
+  @@index([typeId])
+  @@index([isActive])
+}
+
+// Geofences (polygons/circles for geographic alerts)
+model Geofence {
+  id           String   @id @default(uuid())
+  clientId     String
+  name         String
+  description  String?
+  geofenceType String   // "polygon" or "circle"
+  coordinates  String   // JSON: [[lng, lat], ...] for polygon
+  centerLat    Float?   // For circles
+  centerLng    Float?   // For circles
+  radiusKm     Float?   // For circles
+  metadata     String   @default("{}") // JSON
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  rules ClientRule[]
+
+  @@index([clientId])
+}
+
+// Rule state tracking (for enter/exit/change detection)
+model RuleState {
+  id              String   @id @default(uuid())
+  ruleId          String
+  entityId        String   // e.g., IMO number
+  state           String   // JSON: current state
+  lastEvaluatedAt DateTime @default(now())
+
+  rule ClientRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+
+  @@unique([ruleId, entityId])
+  @@index([ruleId])
+  @@index([entityId])
+}
+
+// Notifications (generic, works with any type)
+model Notification {
+  id          String    @id @default(uuid())
+  clientId    String
+  ruleId      String?
+  typeId      String
+  title       String
+  message     String
+  payload     String    // JSON: all contextual data
+  priority    String    @default("medium")
+  status      String    @default("pending") // pending, delivered, read
+  deliveredAt DateTime?
+  readAt      DateTime?
+  createdAt   DateTime  @default(now())
+  expiresAt   DateTime
+
+  rule ClientRule? @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+
+  @@index([clientId, status])
+  @@index([typeId])
+  @@index([createdAt])
+}
+
+// Vessel state cache (for change detection in poll mode)
+model VesselState {
+  id              String   @id @default(uuid())
+  imo             Int      @unique
+  stateHash       String   // Hash of significant fields
+  lastState       String   // JSON: full vessel state
+  lastUpdatedAt   DateTime @default(now())
+
+  @@index([imo])
+}

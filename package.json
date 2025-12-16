@@ -1,0 +1,17 @@
+{
+  "name": "maritime-notification",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --filter web dev",
+    "build": "pnpm --filter web build",
+    "start": "pnpm --filter web start",
+    "mock:start": "pnpm --filter mock-producer start",
+    "mock:dev": "pnpm --filter mock-producer dev",
+    "db:push": "pnpm --filter web db:push",
+    "db:studio": "pnpm --filter web db:studio",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f"
+  }
+}
