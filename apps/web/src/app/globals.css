@@ -12,6 +12,30 @@
   border-radius: 4px;
 }
 
+/* Mapbox popup styling */
+.mapboxgl-popup-content {
+  padding: 0;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  min-width: 200px;
+}
+
+.mapboxgl-popup-close-button {
+  font-size: 18px;
+  padding: 4px 8px;
+  right: 4px;
+  top: 4px;
+  color: #6b7280;
+  background: transparent;
+  border-radius: 4px;
+  line-height: 1;
+}
+
+.mapboxgl-popup-close-button:hover {
+  background-color: #f3f4f6;
+  color: #374151;
+}
+
 /* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 8px;

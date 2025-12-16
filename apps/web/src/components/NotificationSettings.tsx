@@ -1,6 +1,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import {
+  XMarkIcon,
+  MapPinIcon,
+  ArrowsRightLeftIcon,
+  CheckIcon,
+  InformationCircleIcon,
+} from '@heroicons/react/24/outline';
 
 interface DestinationPreferences {
   enabled: boolean;
@@ -10,7 +17,7 @@ interface DestinationPreferences {
 
 interface GeofencePreferences {
   enabled: boolean;
-  geofenceIds: string[]; // Empty = all geofences
+  geofenceIds: string[];
 }
 
 interface Geofence {
@@ -24,30 +31,62 @@ interface NotificationSettingsProps {
   onSave: () => void;
 }
 
-// Common destinations for the demo
 const AVAILABLE_DESTINATIONS = [
-  'SINGAPORE',
-  'SG SIN',
-  'ROTTERDAM',
-  'NL RTM',
-  'HONG KONG',
-  'HK HKG',
-  'SHANGHAI',
-  'CN SHA',
-  'DUBAI',
-  'AE DXB',
-  'HOUSTON',
-  'US HOU',
-  'TOKYO',
-  'JP TYO',
-  'BUSAN',
-  'KR PUS',
-  'FUJAIRAH',
-  'SANTOS',
-  'BR SSZ',
-  'LOS ANGELES',
-  'US LAX',
+  'SINGAPORE', 'ROTTERDAM', 'HONG KONG', 'SHANGHAI', 'DUBAI',
+  'HOUSTON', 'TOKYO', 'BUSAN', 'FUJAIRAH', 'SANTOS', 'LOS ANGELES',
+  'NEW YORK', 'LONDON', 'MUMBAI', 'SYDNEY',
 ];
+
+// Reusable Toggle Switch component
+function Toggle({ enabled, onChange }: { enabled: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!enabled)}
+      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+        enabled ? 'bg-blue-600' : 'bg-gray-200'
+      }`}
+    >
+      <span
+        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform shadow-sm ${
+          enabled ? 'translate-x-6' : 'translate-x-1'
+        }`}
+      />
+    </button>
+  );
+}
+
+// Reusable Chip component
+function Chip({
+  label,
+  selected,
+  onClick,
+  color = 'blue',
+}: {
+  label: string;
+  selected: boolean;
+  onClick: () => void;
+  color?: 'blue' | 'green';
+}) {
+  const colors = {
+    blue: selected
+      ? 'bg-blue-600 text-white border-blue-600'
+      : 'bg-white text-gray-700 border-gray-300 hover:border-blue-400',
+    green: selected
+      ? 'bg-emerald-600 text-white border-emerald-600'
+      : 'bg-white text-gray-700 border-gray-300 hover:border-emerald-400',
+  };
+
+  return (
+    <button
+      onClick={onClick}
+      className={`inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-full border transition-all ${colors[color]}`}
+    >
+      {selected && <CheckIcon className="w-3 h-3" />}
+      {label}
+    </button>
+  );
+}
 
 export default function NotificationSettings({
   clientId,
@@ -67,18 +106,15 @@ export default function NotificationSettings({
     geofenceIds: [],
   });
 
-  // Load available geofences and preferences
   useEffect(() => {
     async function loadData() {
       try {
-        // Load geofences
         const geofenceRes = await fetch(`/api/geofences?clientId=${clientId}`);
         if (geofenceRes.ok) {
           const geofences = await geofenceRes.json();
           setAvailableGeofences(geofences);
         }
 
-        // Load preferences
         const prefsRes = await fetch(`/api/preferences?clientId=${clientId}`);
         if (prefsRes.ok) {
           const data = await prefsRes.json();
@@ -123,238 +159,189 @@ export default function NotificationSettings({
   };
 
   const toggleGeofence = (geofenceId: string) => {
-    setGeofencePrefs((prev) => {
-      const current = prev.geofenceIds;
-      const updated = current.includes(geofenceId)
-        ? current.filter((id) => id !== geofenceId)
-        : [...current, geofenceId];
-      return { ...prev, geofenceIds: updated };
-    });
+    setGeofencePrefs((prev) => ({
+      ...prev,
+      geofenceIds: prev.geofenceIds.includes(geofenceId)
+        ? prev.geofenceIds.filter((id) => id !== geofenceId)
+        : [...prev.geofenceIds, geofenceId],
+    }));
   };
 
-  const toggleDestination = (
-    list: 'fromDestinations' | 'toDestinations',
-    destination: string
-  ) => {
-    setDestinationPrefs((prev) => {
-      const current = prev[list];
-      const updated = current.includes(destination)
-        ? current.filter((d) => d !== destination)
-        : [...current, destination];
-      return { ...prev, [list]: updated };
-    });
+  const toggleDestination = (list: 'fromDestinations' | 'toDestinations', destination: string) => {
+    setDestinationPrefs((prev) => ({
+      ...prev,
+      [list]: prev[list].includes(destination)
+        ? prev[list].filter((d) => d !== destination)
+        : [...prev[list], destination],
+    }));
   };
 
   if (loading) {
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div className="bg-white rounded-lg p-6 w-[500px]">
-          <p className="text-center text-gray-500">Loading preferences...</p>
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="bg-white rounded-xl p-8 shadow-xl">
+          <div className="animate-pulse flex items-center gap-3">
+            <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+            <span className="text-gray-600">Loading preferences...</span>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg w-[500px] max-h-[80vh] overflow-hidden flex flex-col">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl w-full max-w-lg max-h-[85vh] overflow-hidden flex flex-col shadow-xl">
         {/* Header */}
-        <div className="p-4 border-b flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Notification Settings</h2>
+        <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-gray-900">Notification Settings</h2>
           <button
             onClick={onClose}
-            className="text-gray-500 hover:text-gray-700"
+            className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
           >
-            ✕
+            <XMarkIcon className="w-5 h-5" />
           </button>
         </div>
 
         {/* Content */}
-        <div className="p-4 overflow-y-auto flex-1">
-          {/* Geofence Alerts */}
-          <div className="mb-6">
-            <div className="flex items-center justify-between mb-2">
-              <div>
-                <h3 className="font-medium">Geofence Alerts</h3>
-                <p className="text-sm text-gray-500">
-                  Notify when vessels enter/exit your geofences
-                </p>
+        <div className="flex-1 overflow-y-auto p-5 space-y-6">
+          {/* Geofence Alerts Section */}
+          <section className="space-y-4">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <div className="p-2 bg-blue-100 rounded-lg">
+                  <MapPinIcon className="w-5 h-5 text-blue-600" />
+                </div>
+                <div>
+                  <h3 className="font-medium text-gray-900">Geofence Alerts</h3>
+                  <p className="text-sm text-gray-500">Get notified when vessels enter or exit geofences</p>
+                </div>
               </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={geofencePrefs.enabled}
-                  onChange={(e) =>
-                    setGeofencePrefs((prev) => ({
-                      ...prev,
-                      enabled: e.target.checked,
-                    }))
-                  }
-                  className="sr-only peer"
-                />
-                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-              </label>
+              <Toggle
+                enabled={geofencePrefs.enabled}
+                onChange={(v) => setGeofencePrefs((prev) => ({ ...prev, enabled: v }))}
+              />
             </div>
 
             {geofencePrefs.enabled && (
-              <div className="mt-4 pl-4 border-l-2 border-gray-200">
-                {/* Geofence Selection */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Specific Geofences
-                  </label>
-                  <p className="text-xs text-gray-500 mb-2">
-                    Select which geofences to monitor (empty = all geofences)
+              <div className="ml-12 space-y-3">
+                <label className="block text-sm font-medium text-gray-700">
+                  Monitor specific geofences
+                  <span className="font-normal text-gray-400 ml-1">(empty = all)</span>
+                </label>
+                {availableGeofences.length === 0 ? (
+                  <p className="text-sm text-gray-400 italic py-3 px-4 bg-gray-50 rounded-lg">
+                    No geofences created yet. Draw one on the map first.
                   </p>
-                  {availableGeofences.length === 0 ? (
-                    <p className="text-sm text-gray-400 italic p-2 bg-gray-50 rounded">
-                      No geofences created yet. Draw a geofence on the map first.
-                    </p>
-                  ) : (
-                    <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto p-2 bg-gray-50 rounded">
-                      {availableGeofences.map((geofence) => (
-                        <button
-                          key={geofence.id}
-                          onClick={() => toggleGeofence(geofence.id)}
-                          className={`px-2 py-1 text-xs rounded-full border transition ${
-                            geofencePrefs.geofenceIds.includes(geofence.id)
-                              ? 'bg-blue-500 text-white border-blue-500'
-                              : 'bg-white text-gray-700 border-gray-300 hover:border-blue-300'
-                          }`}
-                        >
-                          {geofence.name}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                  {geofencePrefs.geofenceIds.length > 0 && (
-                    <p className="text-xs text-blue-600 mt-1">
-                      Selected: {geofencePrefs.geofenceIds
-                        .map((id) => availableGeofences.find((g) => g.id === id)?.name)
-                        .filter(Boolean)
-                        .join(', ')}
-                    </p>
-                  )}
-                </div>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {availableGeofences.map((geofence) => (
+                      <Chip
+                        key={geofence.id}
+                        label={geofence.name}
+                        selected={geofencePrefs.geofenceIds.includes(geofence.id)}
+                        onClick={() => toggleGeofence(geofence.id)}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
             )}
-          </div>
+          </section>
 
-          {/* Destination Change Alerts */}
-          <div className="mb-6">
-            <div className="flex items-center justify-between mb-2">
-              <div>
-                <h3 className="font-medium">Destination Change Alerts</h3>
-                <p className="text-sm text-gray-500">
-                  Notify when vessels change their destination
-                </p>
+          <hr className="border-gray-200" />
+
+          {/* Destination Change Section */}
+          <section className="space-y-4">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <div className="p-2 bg-purple-100 rounded-lg">
+                  <ArrowsRightLeftIcon className="w-5 h-5 text-purple-600" />
+                </div>
+                <div>
+                  <h3 className="font-medium text-gray-900">Destination Changes</h3>
+                  <p className="text-sm text-gray-500">Get notified when vessels change their destination</p>
+                </div>
               </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={destinationPrefs.enabled}
-                  onChange={(e) =>
-                    setDestinationPrefs((prev) => ({
-                      ...prev,
-                      enabled: e.target.checked,
-                    }))
-                  }
-                  className="sr-only peer"
-                />
-                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-              </label>
+              <Toggle
+                enabled={destinationPrefs.enabled}
+                onChange={(v) => setDestinationPrefs((prev) => ({ ...prev, enabled: v }))}
+              />
             </div>
 
             {destinationPrefs.enabled && (
-              <div className="mt-4 pl-4 border-l-2 border-gray-200">
+              <div className="ml-12 space-y-5">
                 {/* From Destinations */}
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    From Destinations
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-700">
+                    Departing from
+                    <span className="font-normal text-gray-400 ml-1">(empty = any)</span>
                   </label>
-                  <p className="text-xs text-gray-500 mb-2">
-                    Only notify when vessel leaves these destinations (empty = any)
-                  </p>
-                  <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto p-2 bg-gray-50 rounded">
+                  <div className="flex flex-wrap gap-2">
                     {AVAILABLE_DESTINATIONS.map((dest) => (
-                      <button
+                      <Chip
                         key={`from-${dest}`}
+                        label={dest}
+                        selected={destinationPrefs.fromDestinations.includes(dest)}
                         onClick={() => toggleDestination('fromDestinations', dest)}
-                        className={`px-2 py-1 text-xs rounded-full border transition ${
-                          destinationPrefs.fromDestinations.includes(dest)
-                            ? 'bg-blue-500 text-white border-blue-500'
-                            : 'bg-white text-gray-700 border-gray-300 hover:border-blue-300'
-                        }`}
-                      >
-                        {dest}
-                      </button>
+                        color="blue"
+                      />
                     ))}
                   </div>
-                  {destinationPrefs.fromDestinations.length > 0 && (
-                    <p className="text-xs text-blue-600 mt-1">
-                      Selected: {destinationPrefs.fromDestinations.join(', ')}
-                    </p>
-                  )}
                 </div>
 
                 {/* To Destinations */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    To Destinations
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-700">
+                    Arriving at
+                    <span className="font-normal text-gray-400 ml-1">(empty = any)</span>
                   </label>
-                  <p className="text-xs text-gray-500 mb-2">
-                    Only notify when vessel goes to these destinations (empty = any)
-                  </p>
-                  <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto p-2 bg-gray-50 rounded">
+                  <div className="flex flex-wrap gap-2">
                     {AVAILABLE_DESTINATIONS.map((dest) => (
-                      <button
+                      <Chip
                         key={`to-${dest}`}
+                        label={dest}
+                        selected={destinationPrefs.toDestinations.includes(dest)}
                         onClick={() => toggleDestination('toDestinations', dest)}
-                        className={`px-2 py-1 text-xs rounded-full border transition ${
-                          destinationPrefs.toDestinations.includes(dest)
-                            ? 'bg-green-500 text-white border-green-500'
-                            : 'bg-white text-gray-700 border-gray-300 hover:border-green-300'
-                        }`}
-                      >
-                        {dest}
-                      </button>
+                        color="green"
+                      />
                     ))}
                   </div>
-                  {destinationPrefs.toDestinations.length > 0 && (
-                    <p className="text-xs text-green-600 mt-1">
-                      Selected: {destinationPrefs.toDestinations.join(', ')}
-                    </p>
-                  )}
                 </div>
               </div>
             )}
-          </div>
+          </section>
 
-          {/* Info box */}
-          <div className="p-3 bg-blue-50 rounded-lg text-sm text-blue-800">
-            <strong>Filter Logic:</strong>
-            <ul className="mt-1 list-disc list-inside text-xs">
-              <li>Empty "From" = notify when leaving any destination</li>
-              <li>Empty "To" = notify when going to any destination</li>
-              <li>Both set = only notify for specific routes (From → To)</li>
-            </ul>
+          {/* Info Box */}
+          <div className="flex gap-3 p-4 bg-gray-50 rounded-lg">
+            <InformationCircleIcon className="w-5 h-5 text-gray-400 flex-shrink-0 mt-0.5" />
+            <div className="text-sm text-gray-600">
+              <p className="font-medium text-gray-700 mb-1">How filters work</p>
+              <ul className="space-y-1 text-gray-500">
+                <li>Empty selection means "match any"</li>
+                <li>Multiple selections mean "match any of these"</li>
+              </ul>
+            </div>
           </div>
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t flex justify-end gap-2">
+        <div className="px-5 py-4 border-t border-gray-200 flex justify-end gap-3 bg-gray-50">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg"
+            className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200 rounded-lg transition-colors"
           >
             Cancel
           </button>
           <button
             onClick={handleSave}
             disabled={saving}
-            className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50"
+            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
-            {saving ? 'Saving...' : 'Save Preferences'}
+            {saving && (
+              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            )}
+            {saving ? 'Saving...' : 'Save Changes'}
           </button>
         </div>
       </div>

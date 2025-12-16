@@ -3,18 +3,24 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { io, Socket } from 'socket.io-client';
+import {
+  BellIcon,
+  Cog6ToothIcon,
+} from '@heroicons/react/24/outline';
 import type { Notification, VesselState, Geofence } from '@/types';
 import type { MapViewHandle } from '@/components/MapView';
 import NotificationCenter from '@/components/NotificationCenter';
 import GeofenceList from '@/components/GeofenceList';
 import NotificationSettings from '@/components/NotificationSettings';
 
-// Dynamic import for map to avoid SSR issues
 const MapView = dynamic(() => import('@/components/MapView'), {
   ssr: false,
   loading: () => (
-    <div className="w-full h-full bg-gray-200 flex items-center justify-center">
-      Loading map...
+    <div className="w-full h-full bg-gray-100 flex items-center justify-center">
+      <div className="flex items-center gap-3 text-gray-500">
+        <div className="w-5 h-5 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
+        <span>Loading map...</span>
+      </div>
     </div>
   ),
 });
@@ -35,13 +41,11 @@ export default function Home() {
 
   // Fetch initial data
   useEffect(() => {
-    // Fetch geofences
     fetch(`/api/geofences?clientId=${CLIENT_ID}`)
       .then((res) => res.json())
       .then((data) => setGeofences(data))
       .catch(console.error);
 
-    // Fetch recent notifications
     fetch(`/api/notifications?clientId=${CLIENT_ID}`)
       .then((res) => res.json())
       .then((data) => {
@@ -58,13 +62,11 @@ export default function Home() {
     });
 
     newSocket.on('connect', () => {
-      console.log('Socket connected');
       setIsConnected(true);
       newSocket.emit('subscribe', { clientId: CLIENT_ID });
     });
 
     newSocket.on('disconnect', () => {
-      console.log('Socket disconnected');
       setIsConnected(false);
     });
 
@@ -93,37 +95,31 @@ export default function Home() {
     };
   }, []);
 
-  const handleMarkAsRead = useCallback(
-    async (notificationId: string) => {
-      try {
-        await fetch(`/api/notifications/${notificationId}/read`, { method: 'PATCH' });
-        setNotifications((prev) =>
-          prev.map((n) => (n.id === notificationId ? { ...n, status: 'read' as const } : n))
-        );
-        setUnreadCount((prev) => Math.max(0, prev - 1));
-      } catch (error) {
-        console.error('Failed to mark as read:', error);
-      }
-    },
-    []
-  );
+  const handleMarkAsRead = useCallback(async (notificationId: string) => {
+    try {
+      await fetch(`/api/notifications/${notificationId}/read`, { method: 'PATCH' });
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === notificationId ? { ...n, status: 'read' as const } : n))
+      );
+      setUnreadCount((prev) => Math.max(0, prev - 1));
+    } catch (error) {
+      console.error('Failed to mark as read:', error);
+    }
+  }, []);
 
-  const handleGeofenceCreate = useCallback(
-    async (geofence: Omit<Geofence, 'id'>) => {
-      try {
-        const res = await fetch('/api/geofences', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...geofence, clientId: CLIENT_ID }),
-        });
-        const newGeofence = await res.json();
-        setGeofences((prev) => [...prev, newGeofence]);
-      } catch (error) {
-        console.error('Failed to create geofence:', error);
-      }
-    },
-    []
-  );
+  const handleGeofenceCreate = useCallback(async (geofence: Omit<Geofence, 'id'>) => {
+    try {
+      const res = await fetch('/api/geofences', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...geofence, clientId: CLIENT_ID }),
+      });
+      const newGeofence = await res.json();
+      setGeofences((prev) => [...prev, newGeofence]);
+    } catch (error) {
+      console.error('Failed to create geofence:', error);
+    }
+  }, []);
 
   const handleGeofenceDelete = useCallback(async (id: string) => {
     try {
@@ -145,36 +141,34 @@ export default function Home() {
   }, []);
 
   const handleMapReady = useCallback((handle: MapViewHandle) => {
-    console.log('[Page] Map ready, received handle');
     mapHandleRef.current = handle;
   }, []);
 
   const handleVesselClick = useCallback((imo: number) => {
-    console.log('[Page] Vessel clicked, IMO:', imo, 'mapHandleRef:', mapHandleRef.current);
     if (mapHandleRef.current) {
       mapHandleRef.current.focusVessel(imo);
-    } else {
-      console.log('[Page] mapHandleRef.current is null');
+    }
+  }, []);
+
+  const handleGeofenceClick = useCallback((geofenceId: string) => {
+    if (mapHandleRef.current) {
+      mapHandleRef.current.focusGeofence(geofenceId);
     }
   }, []);
 
   return (
-    <div className="flex h-screen">
+    <div className="flex h-screen bg-gray-100">
       {/* Sidebar */}
-      <div className="w-80 bg-white shadow-lg flex flex-col">
+      <div className="w-80 bg-white border-r border-gray-200 flex flex-col">
         {/* Header */}
-        <div className="p-4 border-b">
-          <h1 className="text-xl font-bold text-gray-800">Maritime Notifications</h1>
-          <div className="flex items-center mt-2 text-sm">
-            <span
-              className={`w-2 h-2 rounded-full mr-2 ${
-                isConnected ? 'bg-green-500' : 'bg-red-500'
-              }`}
-            />
-            <span className="text-gray-600">
-              {isConnected ? 'Connected' : 'Disconnected'}
-            </span>
-            <span className="mx-2 text-gray-300">|</span>
+        <div className="p-4 border-b border-gray-200">
+          <h1 className="text-lg font-semibold text-gray-900">Maritime Notifications</h1>
+          <div className="flex items-center gap-3 mt-2 text-sm">
+            <div className="flex items-center gap-1.5">
+              <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-red-500'}`} />
+              <span className="text-gray-600">{isConnected ? 'Connected' : 'Disconnected'}</span>
+            </div>
+            <span className="text-gray-300">|</span>
             <span className="text-gray-600">{vessels.size} vessels</span>
           </div>
         </div>
@@ -185,28 +179,36 @@ export default function Home() {
             geofences={geofences}
             vessels={Array.from(vessels.values())}
             onDelete={handleGeofenceDelete}
+            onGeofenceClick={handleGeofenceClick}
           />
         </div>
 
-        {/* Buttons */}
-        <div className="p-4 border-t space-y-2">
+        {/* Action Buttons */}
+        <div className="p-4 border-t border-gray-200 space-y-2">
           <button
             onClick={() => setShowNotifications(!showNotifications)}
-            className="w-full flex items-center justify-between px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition"
+            className={`w-full flex items-center justify-between px-4 py-2.5 rounded-lg font-medium transition-colors ${
+              showNotifications
+                ? 'bg-gray-900 text-white'
+                : 'bg-blue-600 text-white hover:bg-blue-700'
+            }`}
           >
-            <span>Notifications</span>
+            <div className="flex items-center gap-2">
+              <BellIcon className="w-5 h-5" />
+              <span>Notifications</span>
+            </div>
             {unreadCount > 0 && (
-              <span className="bg-red-500 text-white text-xs px-2 py-1 rounded-full">
-                {unreadCount}
+              <span className="bg-red-500 text-white text-xs font-medium px-2 py-0.5 rounded-full min-w-[20px] text-center">
+                {unreadCount > 99 ? '99+' : unreadCount}
               </span>
             )}
           </button>
           <button
             onClick={() => setShowSettings(true)}
-            className="w-full flex items-center justify-center px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition"
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium transition-colors"
           >
-            <span className="mr-2">⚙️</span>
-            <span>Notification Settings</span>
+            <Cog6ToothIcon className="w-5 h-5" />
+            <span>Settings</span>
           </button>
         </div>
       </div>
@@ -222,17 +224,27 @@ export default function Home() {
         />
       </div>
 
-      {/* Notification Panel */}
+      {/* Notification Panel - Slide in from right */}
+      <div
+        className={`fixed right-0 top-0 h-full w-96 bg-white shadow-2xl transform transition-transform duration-300 ease-in-out z-40 ${
+          showNotifications ? 'translate-x-0' : 'translate-x-full'
+        }`}
+      >
+        <NotificationCenter
+          notifications={notifications}
+          onMarkAsRead={handleMarkAsRead}
+          onClearAll={handleClearAllNotifications}
+          onClose={() => setShowNotifications(false)}
+          onVesselClick={handleVesselClick}
+        />
+      </div>
+
+      {/* Overlay when panel is open */}
       {showNotifications && (
-        <div className="w-96 bg-white shadow-lg">
-          <NotificationCenter
-            notifications={notifications}
-            onMarkAsRead={handleMarkAsRead}
-            onClearAll={handleClearAllNotifications}
-            onClose={() => setShowNotifications(false)}
-            onVesselClick={handleVesselClick}
-          />
-        </div>
+        <div
+          className="fixed inset-0 bg-black/20 z-30 transition-opacity"
+          onClick={() => setShowNotifications(false)}
+        />
       )}
 
       {/* Notification Settings Modal */}
@@ -240,9 +252,7 @@ export default function Home() {
         <NotificationSettings
           clientId={CLIENT_ID}
           onClose={() => setShowSettings(false)}
-          onSave={() => {
-            console.log('Preferences saved - server will apply on next cache refresh');
-          }}
+          onSave={() => {}}
         />
       )}
     </div>

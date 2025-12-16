@@ -10,6 +10,7 @@ import { config } from '@/lib/config';
 
 export interface MapViewHandle {
   focusVessel: (imo: number) => void;
+  focusGeofence: (geofenceId: string) => void;
 }
 
 interface MapViewProps {
@@ -30,14 +31,15 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView({ vesse
   const [geofenceName, setGeofenceName] = useState('');
   const [mapLoaded, setMapLoaded] = useState(false);
 
-  // Create the handle object
+  // Create the handle object - we'll update focusGeofence when geofences change
+  const geofencesRef = useRef(geofences);
+  geofencesRef.current = geofences;
+
   const handleRef = useRef<MapViewHandle>({
     focusVessel: (imo: number) => {
-      console.log('[MapView] focusVessel called with IMO:', imo);
       const marker = markers.current.get(imo);
       if (marker && map.current) {
         const lngLat = marker.getLngLat();
-        console.log('[MapView] Found marker at:', lngLat);
 
         // Close all other popups first
         markers.current.forEach((m) => {
@@ -61,8 +63,34 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView({ vesse
             marker.togglePopup();
           }
         }, 1100);
-      } else {
-        console.log('[MapView] Marker not found for IMO:', imo, 'Available:', Array.from(markers.current.keys()));
+      }
+    },
+    focusGeofence: (geofenceId: string) => {
+      const geofence = geofencesRef.current.find((g) => g.id === geofenceId);
+      if (geofence && map.current && geofence.coordinates.length > 0) {
+        // Calculate bounds of the geofence
+        const coords = geofence.coordinates;
+        const bounds = coords.reduce(
+          (acc, coord) => ({
+            minLng: Math.min(acc.minLng, coord[0]),
+            maxLng: Math.max(acc.maxLng, coord[0]),
+            minLat: Math.min(acc.minLat, coord[1]),
+            maxLat: Math.max(acc.maxLat, coord[1]),
+          }),
+          { minLng: Infinity, maxLng: -Infinity, minLat: Infinity, maxLat: -Infinity }
+        );
+
+        // Fit map to bounds with padding
+        map.current.fitBounds(
+          [
+            [bounds.minLng, bounds.minLat],
+            [bounds.maxLng, bounds.maxLat],
+          ],
+          {
+            padding: 100,
+            duration: 1000,
+          }
+        );
       }
     },
   });
@@ -224,15 +252,27 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView({ vesse
         marker = new mapboxgl.Marker(el)
           .setLngLat([vessel.Longitude, vessel.Latitude])
           .setPopup(
-            new mapboxgl.Popup({ offset: 25 }).setHTML(`
-              <div class="p-2">
-                <h3 class="font-bold">${vessel.VesselName || `IMO: ${vessel.IMO}`}</h3>
-                <p class="text-sm text-gray-600">${vessel.VesselType} - ${vessel.VesselClass}</p>
-                <div class="mt-2 text-xs">
-                  <p><strong>Speed:</strong> ${vessel.Speed} knots</p>
-                  <p><strong>Status:</strong> ${vessel.VesselVoyageStatus}</p>
-                  <p><strong>Destination:</strong> ${vessel.AISDestination || 'N/A'}</p>
-                  <p><strong>Area:</strong> ${vessel.AreaName}</p>
+            new mapboxgl.Popup({ offset: 25, closeButton: true }).setHTML(`
+              <div class="p-3 pr-8">
+                <h3 class="font-semibold text-gray-900">${vessel.VesselName || `IMO: ${vessel.IMO}`}</h3>
+                <p class="text-sm text-gray-500 mt-0.5">${vessel.VesselType} - ${vessel.VesselClass}</p>
+                <div class="mt-3 space-y-1 text-sm">
+                  <div class="flex justify-between">
+                    <span class="text-gray-500">Speed</span>
+                    <span class="font-medium text-gray-900">${vessel.Speed} kn</span>
+                  </div>
+                  <div class="flex justify-between">
+                    <span class="text-gray-500">Status</span>
+                    <span class="font-medium text-gray-900">${vessel.VesselVoyageStatus}</span>
+                  </div>
+                  <div class="flex justify-between">
+                    <span class="text-gray-500">Destination</span>
+                    <span class="font-medium text-gray-900">${vessel.AISDestination || 'N/A'}</span>
+                  </div>
+                  <div class="flex justify-between">
+                    <span class="text-gray-500">Area</span>
+                    <span class="font-medium text-gray-900">${vessel.AreaName}</span>
+                  </div>
                 </div>
               </div>
             `)
