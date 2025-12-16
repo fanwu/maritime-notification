@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import {
   XMarkIcon,
   TrashIcon,
@@ -27,7 +27,6 @@ export default function NotificationCenter({
   onClose,
   onVesselClick,
 }: NotificationCenterProps) {
-  const [filter, setFilter] = useState<'all' | 'unread'>('all');
   const markedAsReadRef = useRef<Set<string>>(new Set());
   const initialNotificationIdsRef = useRef<Set<string>>(new Set());
   const isInitializedRef = useRef(false);
@@ -71,10 +70,6 @@ export default function NotificationCenter({
       return () => clearTimeout(timeoutId);
     }
   }, [notifications, onMarkAsRead]);
-
-  const filteredNotifications = notifications.filter((n) =>
-    filter === 'all' ? true : n.status !== 'read'
-  );
 
   const formatTime = (dateString: string) => {
     const date = new Date(dateString);
@@ -169,40 +164,16 @@ export default function NotificationCenter({
         </div>
       </div>
 
-      {/* Filter Tabs */}
-      <div className="px-4 py-2 border-b border-gray-100 flex gap-1 bg-white">
-        <button
-          onClick={() => setFilter('all')}
-          className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-            filter === 'all'
-              ? 'bg-gray-900 text-white'
-              : 'text-gray-600 hover:bg-gray-100'
-          }`}
-        >
-          All
-        </button>
-        <button
-          onClick={() => setFilter('unread')}
-          className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-            filter === 'unread'
-              ? 'bg-gray-900 text-white'
-              : 'text-gray-600 hover:bg-gray-100'
-          }`}
-        >
-          Unread
-        </button>
-      </div>
-
       {/* Notification List */}
       <div className="flex-1 overflow-y-auto">
-        {filteredNotifications.length === 0 ? (
+        {notifications.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-gray-400">
             <BellIcon className="w-12 h-12 mb-3 stroke-1" />
             <p className="text-sm">No notifications</p>
           </div>
         ) : (
           <div className="divide-y divide-gray-100">
-            {filteredNotifications.map((notification) => {
+            {notifications.map((notification) => {
               const config = getTypeConfig(notification.typeId);
               const IconComponent = config.icon;
 

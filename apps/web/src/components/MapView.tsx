@@ -7,6 +7,7 @@ import 'mapbox-gl/dist/mapbox-gl.css';
 import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
 import type { VesselState, Geofence } from '@/types';
 import { config } from '@/lib/config';
+import { isOnWater } from '@/lib/geo';
 
 export interface MapViewHandle {
   focusVessel: (imo: number) => void;
@@ -220,6 +221,18 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView({ vesse
     // Update existing markers or create new ones
     vessels.forEach((vessel) => {
       let marker = markers.current.get(vessel.IMO);
+
+      // Check if vessel is on water
+      const onWater = isOnWater(vessel.Longitude, vessel.Latitude);
+
+      if (!onWater) {
+        // If vessel is on land, remove marker if it exists
+        if (marker) {
+          marker.remove();
+          markers.current.delete(vessel.IMO);
+        }
+        return; // Skip this vessel
+      }
 
       if (marker) {
         // Update position

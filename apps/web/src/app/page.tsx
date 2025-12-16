@@ -224,27 +224,23 @@ export default function Home() {
         />
       </div>
 
-      {/* Notification Panel - Slide in from right */}
-      <div
-        className={`fixed right-0 top-0 h-full w-96 bg-white shadow-2xl transform transition-transform duration-300 ease-in-out z-40 ${
-          showNotifications ? 'translate-x-0' : 'translate-x-full'
-        }`}
-      >
-        <NotificationCenter
-          notifications={notifications}
-          onMarkAsRead={handleMarkAsRead}
-          onClearAll={handleClearAllNotifications}
-          onClose={() => setShowNotifications(false)}
-          onVesselClick={handleVesselClick}
-        />
-      </div>
-
-      {/* Overlay when panel is open */}
+      {/* Notification Panel */}
       {showNotifications && (
-        <div
-          className="fixed inset-0 bg-black/20 z-30 transition-opacity"
-          onClick={() => setShowNotifications(false)}
-        />
+        <>
+          <div
+            className="fixed inset-0 bg-black/20 z-30"
+            onClick={() => setShowNotifications(false)}
+          />
+          <div className="fixed right-0 top-0 h-full w-96 bg-white shadow-2xl z-40 animate-slide-in">
+            <NotificationCenter
+              notifications={notifications}
+              onMarkAsRead={handleMarkAsRead}
+              onClearAll={handleClearAllNotifications}
+              onClose={() => setShowNotifications(false)}
+              onVesselClick={handleVesselClick}
+            />
+          </div>
+        </>
       )}
 
       {/* Notification Settings Modal */}
