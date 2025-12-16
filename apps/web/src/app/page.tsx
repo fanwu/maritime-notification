@@ -154,6 +154,7 @@ export default function Home() {
         <div className="flex-1 overflow-y-auto p-4">
           <GeofenceList
             geofences={geofences}
+            vessels={Array.from(vessels.values())}
             onDelete={handleGeofenceDelete}
           />
         </div>

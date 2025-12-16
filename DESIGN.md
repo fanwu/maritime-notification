@@ -561,6 +561,19 @@ interface NotificationTypeDefinition {
   // What filters can be applied
   filterSchema: JSONSchema;
 
+  // UI schema for rendering user preference settings dynamically
+  preferencesUISchema?: {
+    sections: Array<{
+      key: string;           // Field path in condition, e.g., "from", "to"
+      label: string;         // Display label
+      type: 'multiselect' | 'select' | 'number' | 'toggle' | 'text';
+      options?: string[];    // Static options for select/multiselect
+      optionsSource?: string; // Dynamic options: "destinations", "vesselTypes", "ports"
+      placeholder?: string;
+      helpText?: string;
+    }>;
+  };
+
   // Notification template
   defaultTemplate: {
     title: string;          // Template with {{variables}}
@@ -670,10 +683,39 @@ interface NotificationTypeDefinition {
         "type": "object",
         "properties": {
           "field": { "enum": ["AISDestination", "AISDestinationPortID"] },
-          "to": { "type": "array", "items": { "type": "string" }, "description": "Optional: specific destinations to watch. Empty = any change" }
+          "from": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Only notify when leaving these destinations (empty = any)"
+          },
+          "to": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Only notify when arriving at these destinations (empty = any)"
+          }
         },
         "required": ["field"]
       }
+    },
+    "preferencesUISchema": {
+      "sections": [
+        {
+          "key": "from",
+          "label": "From Destinations",
+          "type": "multiselect",
+          "optionsSource": "destinations",
+          "placeholder": "Any destination",
+          "helpText": "Only notify when vessel leaves these destinations"
+        },
+        {
+          "key": "to",
+          "label": "To Destinations",
+          "type": "multiselect",
+          "optionsSource": "destinations",
+          "placeholder": "Any destination",
+          "helpText": "Only notify when vessel arrives at these destinations"
+        }
+      ]
     },
     "stateTracking": { "enabled": true, "transitionEvents": ["change"] },
     "defaultTemplate": {
@@ -802,7 +844,112 @@ interface ClientRule {
 ]
 ```
 
-#### 5.3.3 Condition Evaluators
+#### 5.3.3 User Preferences & Filter Logic
+
+User preferences are stored within the `condition` object of each `ClientRule`. The `preferencesUISchema` in the type definition tells the UI how to render the preference settings dynamically.
+
+**Filter Evaluation Logic for `change` Evaluator:**
+
+```typescript
+function evaluateChangeCondition(
+  currentValue: any,
+  previousValue: any,
+  condition: { field: string; from?: string[]; to?: string[] }
+): boolean {
+  // No change = no notification
+  if (previousValue === currentValue) return false;
+
+  // Check "from" filter (if specified)
+  if (condition.from && condition.from.length > 0) {
+    if (!condition.from.includes(previousValue)) return false;
+  }
+
+  // Check "to" filter (if specified)
+  if (condition.to && condition.to.length > 0) {
+    if (!condition.to.includes(currentValue)) return false;
+  }
+
+  // All filters passed (or no filters set)
+  return true;
+}
+```
+
+**User Preference Scenarios:**
+
+| Scenario | `from` Filter | `to` Filter | Notification Triggered When |
+|----------|---------------|-------------|------------------------------|
+| All destination changes | `[]` (empty) | `[]` (empty) | Any destination change |
+| Leaving specific ports | `["SINGAPORE", "HK"]` | `[]` | Leaving Singapore OR Hong Kong (to anywhere) |
+| Arriving at specific ports | `[]` | `["ROTTERDAM", "DUBAI"]` | Arriving at Rotterdam OR Dubai (from anywhere) |
+| Specific route | `["SINGAPORE"]` | `["ROTTERDAM"]` | Only Singapore → Rotterdam route |
+| Multiple routes | `["SINGAPORE", "HK"]` | `["ROTTERDAM", "DUBAI"]` | SG→RTM, SG→DXB, HK→RTM, HK→DXB |
+
+**Example: Destination Change Rule with Filters**
+
+```json
+{
+  "id": "rule-dest-sg-rtm",
+  "clientId": "client-123",
+  "typeId": "destination_change",
+  "name": "Singapore to Rotterdam Route Watch",
+  "condition": {
+    "field": "AISDestination",
+    "from": ["SINGAPORE", "SG SIN", "SGSIN"],
+    "to": ["ROTTERDAM", "NL RTM", "NLRTM"]
+  },
+  "filters": {
+    "vesselTypes": ["Tanker"]
+  },
+  "settings": {
+    "priority": "high"
+  },
+  "isActive": true
+}
+```
+
+**Dynamic Preference UI Rendering:**
+
+The UI reads `preferencesUISchema` from the notification type definition and renders the appropriate form controls:
+
+```typescript
+// Pseudo-code for rendering preferences UI
+function renderPreferencesUI(typeDefinition: NotificationTypeDefinition) {
+  const { preferencesUISchema } = typeDefinition;
+
+  return preferencesUISchema.sections.map(section => {
+    switch (section.type) {
+      case 'multiselect':
+        const options = section.optionsSource
+          ? fetchOptionsFromSource(section.optionsSource)  // e.g., fetch destinations
+          : section.options;
+        return <MultiSelect
+          key={section.key}
+          label={section.label}
+          options={options}
+          placeholder={section.placeholder}
+          helpText={section.helpText}
+        />;
+      case 'number':
+        return <NumberInput key={section.key} label={section.label} />;
+      case 'toggle':
+        return <Toggle key={section.key} label={section.label} />;
+      // ... other types
+    }
+  });
+}
+```
+
+**Options Sources:**
+
+| Source | Description | Example Values |
+|--------|-------------|----------------|
+| `destinations` | Known AIS destinations | SINGAPORE, ROTTERDAM, DUBAI, HOUSTON, ... |
+| `vesselTypes` | Vessel type classifications | Tanker, Container, Dry, LNG, LPG |
+| `ports` | Port database | Port IDs or names |
+| `areas` | Geographic areas | Singapore Strait, Suez Canal, ... |
+| `operators` | Commercial operators | Operator IDs or names |
+
+#### 5.3.4 Condition Evaluators
 
 Evaluators are pluggable functions that implement a common interface:
 
@@ -885,7 +1032,7 @@ Then add a notification type definition (via API, no code deploy):
 }
 ```
 
-#### 5.3.4 Rules Engine Flow
+#### 5.3.5 Rules Engine Flow
 
 ```typescript
 async function processEvent(event: DataEvent): Promise<void> {

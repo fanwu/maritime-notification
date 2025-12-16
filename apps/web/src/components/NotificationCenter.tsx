@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { Notification } from '@/types';
 
 interface NotificationCenterProps {
@@ -15,6 +15,51 @@ export default function NotificationCenter({
   onClose,
 }: NotificationCenterProps) {
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
+  const markedAsReadRef = useRef<Set<string>>(new Set());
+  const initialNotificationIdsRef = useRef<Set<string>>(new Set());
+  const isInitializedRef = useRef(false);
+
+  // Mark all unread notifications as read when panel opens
+  useEffect(() => {
+    if (!isInitializedRef.current) {
+      // Store initial notification IDs
+      notifications.forEach(n => initialNotificationIdsRef.current.add(n.id));
+      isInitializedRef.current = true;
+
+      // Mark all current unread as read
+      notifications.forEach((n) => {
+        if (n.status !== 'read' && !markedAsReadRef.current.has(n.id)) {
+          markedAsReadRef.current.add(n.id);
+          onMarkAsRead(n.id);
+        }
+      });
+    }
+  }, [notifications, onMarkAsRead]);
+
+  // Mark NEW notifications (arriving after panel opened) as read after 2 seconds
+  useEffect(() => {
+    if (!isInitializedRef.current) return;
+
+    const newUnreadNotifications = notifications.filter(
+      (n) =>
+        n.status !== 'read' &&
+        !markedAsReadRef.current.has(n.id) &&
+        !initialNotificationIdsRef.current.has(n.id)
+    );
+
+    if (newUnreadNotifications.length > 0) {
+      const timeoutId = setTimeout(() => {
+        newUnreadNotifications.forEach((n) => {
+          if (!markedAsReadRef.current.has(n.id)) {
+            markedAsReadRef.current.add(n.id);
+            onMarkAsRead(n.id);
+          }
+        });
+      }, 2000); // 2 second delay for new notifications
+
+      return () => clearTimeout(timeoutId);
+    }
+  }, [notifications, onMarkAsRead]);
 
   const filteredNotifications = notifications.filter((n) =>
     filter === 'all' ? true : n.status !== 'read'
@@ -111,14 +156,9 @@ export default function NotificationCenter({
           filteredNotifications.map((notification) => (
             <div
               key={notification.id}
-              className={`p-4 border-b hover:bg-gray-50 cursor-pointer ${
+              className={`p-4 border-b hover:bg-gray-50 ${
                 notification.status !== 'read' ? 'bg-blue-50' : ''
               }`}
-              onClick={() => {
-                if (notification.status !== 'read') {
-                  onMarkAsRead(notification.id);
-                }
-              }}
             >
               <div className="flex items-start gap-3">
                 <span className="text-2xl">{getTypeIcon(notification.typeId)}</span>

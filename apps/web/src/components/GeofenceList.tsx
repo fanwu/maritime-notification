@@ -1,13 +1,37 @@
 'use client';
 
-import type { Geofence } from '@/types';
+import type { Geofence, VesselState } from '@/types';
+import * as turf from '@turf/turf';
 
 interface GeofenceListProps {
   geofences: Geofence[];
+  vessels: VesselState[];
   onDelete: (id: string) => void;
 }
 
-export default function GeofenceList({ geofences, onDelete }: GeofenceListProps) {
+function countVesselsInGeofence(geofence: Geofence, vessels: VesselState[]): number {
+  if (geofence.geofenceType !== 'polygon' || !geofence.coordinates.length) {
+    return 0;
+  }
+
+  // Ensure polygon is closed
+  const coords = [...geofence.coordinates];
+  if (
+    coords[0][0] !== coords[coords.length - 1][0] ||
+    coords[0][1] !== coords[coords.length - 1][1]
+  ) {
+    coords.push(coords[0]);
+  }
+
+  const polygon = turf.polygon([coords]);
+
+  return vessels.filter((vessel) => {
+    const point = turf.point([vessel.Longitude, vessel.Latitude]);
+    return turf.booleanPointInPolygon(point, polygon);
+  }).length;
+}
+
+export default function GeofenceList({ geofences, vessels, onDelete }: GeofenceListProps) {
   return (
     <div>
       <h2 className="text-lg font-semibold mb-4 flex items-center">
@@ -33,9 +57,14 @@ export default function GeofenceList({ geofences, onDelete }: GeofenceListProps)
                 <div>
                   <h3 className="font-medium text-gray-900">{geofence.name}</h3>
                   <p className="text-xs text-gray-500 mt-1">
-                    {geofence.geofenceType === 'polygon'
-                      ? `${geofence.coordinates.length} points`
-                      : `Radius: ${geofence.radiusKm}km`}
+                    {(() => {
+                      const count = countVesselsInGeofence(geofence, vessels);
+                      return count === 0
+                        ? 'No vessels inside'
+                        : count === 1
+                        ? '1 vessel inside'
+                        : `${count} vessels inside`;
+                    })()}
                   </p>
                 </div>
                 <button

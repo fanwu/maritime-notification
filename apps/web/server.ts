@@ -118,24 +118,39 @@ async function processVesselUpdate(vessel: any, io: SocketIOServer) {
       vesselGeofenceState.set(stateKey, isInside);
 
       const action = isInside ? 'entered' : 'exited';
-      const notification = {
-        id: `notif-${Date.now()}-${vessel.IMO}-${geofence.id}`,
-        clientId: geofence.clientId,
-        typeId: 'geofence_alert',
-        title: `Vessel ${action} ${geofence.name}`,
-        message: `${vessel.VesselName || `IMO ${vessel.IMO}`} has ${action} the ${geofence.name} geofence`,
-        payload: {
-          vesselName: vessel.VesselName,
-          imo: vessel.IMO,
-          latitude: vessel.Latitude,
-          longitude: vessel.Longitude,
-          action,
-          geofenceName: geofence.name,
-          geofenceId: geofence.id,
+      // Save notification to database (expires in 7 days)
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+      const dbNotification = await prisma.notification.create({
+        data: {
+          clientId: geofence.clientId,
+          typeId: 'geofence_alert',
+          title: `Vessel ${action} ${geofence.name}`,
+          message: `${vessel.VesselName || `IMO ${vessel.IMO}`} has ${action} the ${geofence.name} geofence`,
+          payload: JSON.stringify({
+            vesselName: vessel.VesselName,
+            imo: vessel.IMO,
+            latitude: vessel.Latitude,
+            longitude: vessel.Longitude,
+            action,
+            geofenceName: geofence.name,
+            geofenceId: geofence.id,
+          }),
+          priority: 'medium',
+          status: 'pending',
+          expiresAt,
         },
-        priority: 'medium',
-        status: 'pending',
-        createdAt: new Date().toISOString(),
+      });
+
+      const notification = {
+        id: dbNotification.id,
+        clientId: dbNotification.clientId,
+        typeId: dbNotification.typeId,
+        title: dbNotification.title,
+        message: dbNotification.message,
+        payload: JSON.parse(dbNotification.payload),
+        priority: dbNotification.priority,
+        status: dbNotification.status,
+        createdAt: dbNotification.createdAt.toISOString(),
       };
 
       console.log(`[Notification] ${notification.title}`);
@@ -148,23 +163,38 @@ async function processVesselUpdate(vessel: any, io: SocketIOServer) {
   const currentDestination = vessel.AISDestination;
 
   if (previousDestination !== undefined && previousDestination !== currentDestination) {
-    const notification = {
-      id: `notif-${Date.now()}-${vessel.IMO}-dest`,
-      clientId: 'demo-client',
-      typeId: 'destination_change',
-      title: `Destination Changed: ${vessel.VesselName || `IMO ${vessel.IMO}`}`,
-      message: `${vessel.VesselName || `IMO ${vessel.IMO}`} changed destination from "${previousDestination}" to "${currentDestination}"`,
-      payload: {
-        vesselName: vessel.VesselName,
-        imo: vessel.IMO,
-        latitude: vessel.Latitude,
-        longitude: vessel.Longitude,
-        previousValue: previousDestination,
-        currentValue: currentDestination,
+    // Save notification to database (expires in 7 days)
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    const dbNotification = await prisma.notification.create({
+      data: {
+        clientId: 'demo-client',
+        typeId: 'destination_change',
+        title: `Destination Changed: ${vessel.VesselName || `IMO ${vessel.IMO}`}`,
+        message: `${vessel.VesselName || `IMO ${vessel.IMO}`} changed destination from "${previousDestination}" to "${currentDestination}"`,
+        payload: JSON.stringify({
+          vesselName: vessel.VesselName,
+          imo: vessel.IMO,
+          latitude: vessel.Latitude,
+          longitude: vessel.Longitude,
+          previousValue: previousDestination,
+          currentValue: currentDestination,
+        }),
+        priority: 'medium',
+        status: 'pending',
+        expiresAt,
       },
-      priority: 'medium',
-      status: 'pending',
-      createdAt: new Date().toISOString(),
+    });
+
+    const notification = {
+      id: dbNotification.id,
+      clientId: dbNotification.clientId,
+      typeId: dbNotification.typeId,
+      title: dbNotification.title,
+      message: dbNotification.message,
+      payload: JSON.parse(dbNotification.payload),
+      priority: dbNotification.priority,
+      status: dbNotification.status,
+      createdAt: dbNotification.createdAt.toISOString(),
     };
 
     console.log(`[Notification] ${notification.title}: ${previousDestination} -> ${currentDestination}`);
