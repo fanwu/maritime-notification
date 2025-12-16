@@ -6,6 +6,7 @@ import type { Notification } from '@/types';
 interface NotificationCenterProps {
   notifications: Notification[];
   onMarkAsRead: (id: string) => void;
+  onClearAll: () => void;
   onClose: () => void;
   onVesselClick?: (imo: number) => void;
 }
@@ -13,6 +14,7 @@ interface NotificationCenterProps {
 export default function NotificationCenter({
   notifications,
   onMarkAsRead,
+  onClearAll,
   onClose,
   onVesselClick,
 }: NotificationCenterProps) {
@@ -116,12 +118,22 @@ export default function NotificationCenter({
       {/* Header */}
       <div className="p-4 border-b flex items-center justify-between">
         <h2 className="text-lg font-semibold">Notifications</h2>
-        <button
-          onClick={onClose}
-          className="text-gray-500 hover:text-gray-700"
-        >
-          ✕
-        </button>
+        <div className="flex items-center gap-2">
+          {notifications.length > 0 && (
+            <button
+              onClick={onClearAll}
+              className="text-xs text-red-500 hover:text-red-700 px-2 py-1 hover:bg-red-50 rounded"
+            >
+              Clear All
+            </button>
+          )}
+          <button
+            onClick={onClose}
+            className="text-gray-500 hover:text-gray-700"
+          >
+            ✕
+          </button>
+        </div>
       </div>
 
       {/* Filter */}

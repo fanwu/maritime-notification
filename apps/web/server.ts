@@ -73,7 +73,10 @@ const GEOFENCE_CACHE_TTL = 5000;
 
 // Cache client preferences (refresh every 5 seconds)
 interface ClientPreferences {
-  geofenceAlert: { enabled: boolean };
+  geofenceAlert: {
+    enabled: boolean;
+    geofenceIds: string[]; // Empty = all geofences
+  };
   destinationChange: {
     enabled: boolean;
     from: string[];
@@ -115,8 +118,19 @@ async function getClientPreferences(clientId: string): Promise<ClientPreferences
         } catch (e) {}
       }
 
+      let geofenceCondition = { geofenceIds: [] as string[] };
+      if (geofenceRule) {
+        try {
+          const parsed = JSON.parse(geofenceRule.condition);
+          geofenceCondition.geofenceIds = parsed.geofenceIds || [];
+        } catch (e) {}
+      }
+
       preferencesCache.set(cId, {
-        geofenceAlert: { enabled: geofenceRule?.isActive ?? true },
+        geofenceAlert: {
+          enabled: geofenceRule?.isActive ?? true,
+          geofenceIds: geofenceCondition.geofenceIds,
+        },
         destinationChange: {
           enabled: destRule?.isActive ?? true,
           from: destCondition.from,
@@ -131,7 +145,7 @@ async function getClientPreferences(clientId: string): Promise<ClientPreferences
 
   // Return preferences for this client, or defaults
   return preferencesCache.get(clientId) || {
-    geofenceAlert: { enabled: true },
+    geofenceAlert: { enabled: true, geofenceIds: [] },
     destinationChange: { enabled: true, from: [], to: [] },
   };
 }
@@ -213,6 +227,13 @@ async function processVesselUpdate(vessel: any, io: SocketIOServer) {
       const prefs = await getClientPreferences(geofence.clientId);
       if (!prefs.geofenceAlert.enabled) {
         continue; // Skip notification if disabled
+      }
+
+      // Check if this geofence is in user's selected list (empty = all)
+      if (prefs.geofenceAlert.geofenceIds.length > 0 &&
+          !prefs.geofenceAlert.geofenceIds.includes(geofence.id)) {
+        console.log(`[Filtered] Geofence ${geofence.name} not in user's selected list`);
+        continue;
       }
 
       const action = isInside ? 'entered' : 'exited';

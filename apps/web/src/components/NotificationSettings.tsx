@@ -8,6 +8,16 @@ interface DestinationPreferences {
   toDestinations: string[];
 }
 
+interface GeofencePreferences {
+  enabled: boolean;
+  geofenceIds: string[]; // Empty = all geofences
+}
+
+interface Geofence {
+  id: string;
+  name: string;
+}
+
 interface NotificationSettingsProps {
   clientId: string;
   onClose: () => void;
@@ -46,34 +56,49 @@ export default function NotificationSettings({
 }: NotificationSettingsProps) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [availableGeofences, setAvailableGeofences] = useState<Geofence[]>([]);
   const [destinationPrefs, setDestinationPrefs] = useState<DestinationPreferences>({
     enabled: true,
     fromDestinations: [],
     toDestinations: [],
   });
-  const [geofenceEnabled, setGeofenceEnabled] = useState(true);
+  const [geofencePrefs, setGeofencePrefs] = useState<GeofencePreferences>({
+    enabled: true,
+    geofenceIds: [],
+  });
 
-  // Load current preferences
+  // Load available geofences and preferences
   useEffect(() => {
-    async function loadPreferences() {
+    async function loadData() {
       try {
-        const res = await fetch(`/api/preferences?clientId=${clientId}`);
-        if (res.ok) {
-          const data = await res.json();
+        // Load geofences
+        const geofenceRes = await fetch(`/api/geofences?clientId=${clientId}`);
+        if (geofenceRes.ok) {
+          const geofences = await geofenceRes.json();
+          setAvailableGeofences(geofences);
+        }
+
+        // Load preferences
+        const prefsRes = await fetch(`/api/preferences?clientId=${clientId}`);
+        if (prefsRes.ok) {
+          const data = await prefsRes.json();
           if (data.destinationChange) {
             setDestinationPrefs(data.destinationChange);
           }
-          if (data.geofenceAlert !== undefined) {
-            setGeofenceEnabled(data.geofenceAlert.enabled);
+          if (data.geofenceAlert) {
+            setGeofencePrefs({
+              enabled: data.geofenceAlert.enabled ?? true,
+              geofenceIds: data.geofenceAlert.geofenceIds ?? [],
+            });
           }
         }
       } catch (error) {
-        console.error('Failed to load preferences:', error);
+        console.error('Failed to load data:', error);
       } finally {
         setLoading(false);
       }
     }
-    loadPreferences();
+    loadData();
   }, [clientId]);
 
   const handleSave = async () => {
@@ -85,7 +110,7 @@ export default function NotificationSettings({
         body: JSON.stringify({
           clientId,
           destinationChange: destinationPrefs,
-          geofenceAlert: { enabled: geofenceEnabled },
+          geofenceAlert: geofencePrefs,
         }),
       });
       onSave();
@@ -95,6 +120,16 @@ export default function NotificationSettings({
     } finally {
       setSaving(false);
     }
+  };
+
+  const toggleGeofence = (geofenceId: string) => {
+    setGeofencePrefs((prev) => {
+      const current = prev.geofenceIds;
+      const updated = current.includes(geofenceId)
+        ? current.filter((id) => id !== geofenceId)
+        : [...current, geofenceId];
+      return { ...prev, geofenceIds: updated };
+    });
   };
 
   const toggleDestination = (
@@ -148,13 +183,61 @@ export default function NotificationSettings({
               <label className="relative inline-flex items-center cursor-pointer">
                 <input
                   type="checkbox"
-                  checked={geofenceEnabled}
-                  onChange={(e) => setGeofenceEnabled(e.target.checked)}
+                  checked={geofencePrefs.enabled}
+                  onChange={(e) =>
+                    setGeofencePrefs((prev) => ({
+                      ...prev,
+                      enabled: e.target.checked,
+                    }))
+                  }
                   className="sr-only peer"
                 />
                 <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
               </label>
             </div>
+
+            {geofencePrefs.enabled && (
+              <div className="mt-4 pl-4 border-l-2 border-gray-200">
+                {/* Geofence Selection */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Specific Geofences
+                  </label>
+                  <p className="text-xs text-gray-500 mb-2">
+                    Select which geofences to monitor (empty = all geofences)
+                  </p>
+                  {availableGeofences.length === 0 ? (
+                    <p className="text-sm text-gray-400 italic p-2 bg-gray-50 rounded">
+                      No geofences created yet. Draw a geofence on the map first.
+                    </p>
+                  ) : (
+                    <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto p-2 bg-gray-50 rounded">
+                      {availableGeofences.map((geofence) => (
+                        <button
+                          key={geofence.id}
+                          onClick={() => toggleGeofence(geofence.id)}
+                          className={`px-2 py-1 text-xs rounded-full border transition ${
+                            geofencePrefs.geofenceIds.includes(geofence.id)
+                              ? 'bg-blue-500 text-white border-blue-500'
+                              : 'bg-white text-gray-700 border-gray-300 hover:border-blue-300'
+                          }`}
+                        >
+                          {geofence.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {geofencePrefs.geofenceIds.length > 0 && (
+                    <p className="text-xs text-blue-600 mt-1">
+                      Selected: {geofencePrefs.geofenceIds
+                        .map((id) => availableGeofences.find((g) => g.id === id)?.name)
+                        .filter(Boolean)
+                        .join(', ')}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Destination Change Alerts */}

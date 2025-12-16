@@ -134,6 +134,16 @@ export default function Home() {
     }
   }, []);
 
+  const handleClearAllNotifications = useCallback(async () => {
+    try {
+      await fetch(`/api/notifications?clientId=${CLIENT_ID}`, { method: 'DELETE' });
+      setNotifications([]);
+      setUnreadCount(0);
+    } catch (error) {
+      console.error('Failed to clear notifications:', error);
+    }
+  }, []);
+
   const handleMapReady = useCallback((handle: MapViewHandle) => {
     console.log('[Page] Map ready, received handle');
     mapHandleRef.current = handle;
@@ -218,6 +228,7 @@ export default function Home() {
           <NotificationCenter
             notifications={notifications}
             onMarkAsRead={handleMarkAsRead}
+            onClearAll={handleClearAllNotifications}
             onClose={() => setShowNotifications(false)}
             onVesselClick={handleVesselClick}
           />

@@ -22,6 +22,7 @@ export async function GET(request: NextRequest) {
     },
     geofenceAlert: {
       enabled: geofenceAlertRule?.isActive ?? true,
+      geofenceIds: [] as string[],
     },
   };
 
@@ -30,6 +31,15 @@ export async function GET(request: NextRequest) {
       const condition = JSON.parse(destinationChangeRule.condition);
       preferences.destinationChange.fromDestinations = condition.from || [];
       preferences.destinationChange.toDestinations = condition.to || [];
+    } catch (e) {
+      // Invalid JSON, use defaults
+    }
+  }
+
+  if (geofenceAlertRule) {
+    try {
+      const condition = JSON.parse(geofenceAlertRule.condition);
+      preferences.geofenceAlert.geofenceIds = condition.geofenceIds || [];
     } catch (e) {
       // Invalid JSON, use defaults
     }
@@ -109,16 +119,21 @@ export async function PUT(request: NextRequest) {
     }
   }
 
-  // Upsert geofence alert rule (just enable/disable)
+  // Upsert geofence alert rule
   if (geofenceAlert !== undefined) {
     const existingRule = await prisma.clientRule.findFirst({
       where: { clientId, typeId: 'geofence_alert' },
+    });
+
+    const condition = JSON.stringify({
+      geofenceIds: geofenceAlert.geofenceIds || [],
     });
 
     if (existingRule) {
       await prisma.clientRule.update({
         where: { id: existingRule.id },
         data: {
+          condition,
           isActive: geofenceAlert.enabled,
           updatedAt: new Date(),
         },
@@ -140,8 +155,7 @@ export async function PUT(request: NextRequest) {
               parameters: {
                 type: 'object',
                 properties: {
-                  polygonId: { type: 'string' },
-                  triggerOn: { enum: ['enter', 'exit', 'both'] },
+                  geofenceIds: { type: 'array', items: { type: 'string' } },
                 },
               },
             }),
@@ -159,7 +173,7 @@ export async function PUT(request: NextRequest) {
           clientId,
           typeId: 'geofence_alert',
           name: 'Geofence Alert Preferences',
-          condition: JSON.stringify({ triggerOn: 'both' }),
+          condition,
           isActive: geofenceAlert.enabled,
         },
       });
