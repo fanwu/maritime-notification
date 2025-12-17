@@ -16,6 +16,9 @@ RUN pnpm install --frozen-lockfile
 # Copy source files
 COPY apps/web apps/web
 
+# Copy root .env file for NEXT_PUBLIC_* variables (needed at build time)
+COPY .env apps/web/.env
+
 # Generate Prisma client
 WORKDIR /app/apps/web
 RUN npx prisma generate
