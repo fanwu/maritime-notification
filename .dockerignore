@@ -1,0 +1,42 @@
+# Dependencies
+node_modules
+**/node_modules
+
+# Build outputs
+.next
+**/dist
+**/.next
+
+# Development files
+*.log
+.env
+.env.local
+.env*.local
+**/*.db
+**/*.db-journal
+
+# Version control
+.git
+.gitignore
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Documentation
+*.md
+!README.md
+
+# Deploy scripts (not needed in container)
+deploy/
+
+# Test files
+**/__tests__
+**/*.test.*
+**/*.spec.*
