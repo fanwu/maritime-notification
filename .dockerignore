@@ -9,7 +9,6 @@ node_modules
 
 # Development files
 *.log
-.env
 .env.local
 .env*.local
 **/*.db
