@@ -105,10 +105,14 @@ The message queue handles high-throughput vessel data ingestion and notification
 |--------|------|------|----------|
 | **Apache Kafka** | Extremely high throughput (millions/sec), durable, replay capability, excellent for event sourcing | Complex setup, requires ZooKeeper (or KRaft), higher operational overhead | Large scale, event sourcing needs |
 | **Amazon SQS + SNS** | Fully managed, no ops overhead, integrates with AWS Lambda, scales automatically | Vendor lock-in, higher latency than Kafka, limited message ordering | AWS-centric deployments |
+| **Azure Service Bus** | Enterprise-grade, AMQP support, dead-letter queues, sessions for ordering, integrates with Azure Functions | Azure vendor lock-in, costs at scale | Azure-centric deployments |
+| **Azure Event Hubs** | Kafka-compatible API, millions of events/sec, capture to Azure Storage, fully managed | Azure lock-in, less feature-rich than full Kafka | High-throughput Azure streaming |
 | **RabbitMQ** | Easy setup, flexible routing, good for complex routing patterns, lower latency | Lower throughput than Kafka, requires more manual scaling | Moderate scale, complex routing |
 | **Redis Streams** | Very low latency, simple setup, can double as cache | Less durable than Kafka, limited replay capability | Low-latency, moderate scale |
 
 **Recommendation:** **Apache Kafka** for production (handles scale, provides event replay for debugging), **Redis Streams** for initial development/demo (simpler setup).
+
+**Azure Alternative:** **Azure Event Hubs** with Kafka-compatible API allows using existing Kafka code with minimal changes, or **Azure Service Bus** for enterprise messaging patterns.
 
 ---
 
@@ -119,20 +123,27 @@ The message queue handles high-throughput vessel data ingestion and notification
 | Option | Pros | Cons | Best For |
 |--------|------|------|----------|
 | **PostgreSQL** | ACID compliance, excellent JSON support (JSONB), PostGIS for geospatial, mature ecosystem | Scaling requires more effort (read replicas, partitioning) | Complex queries, geospatial data |
+| **Azure SQL Database** | Fully managed SQL Server, built-in HA, auto-tuning, spatial data types | Azure lock-in, licensing costs | .NET/Azure enterprise deployments |
+| **Azure Cosmos DB** | Global distribution, multi-model (SQL, MongoDB, Cassandra), auto-scaling, geospatial queries | Cost at scale, eventual consistency by default | Global apps, flexible schema |
 | **MongoDB** | Flexible schema, built-in geospatial queries, horizontal scaling (sharding) | Less strict consistency, query performance can vary | Rapidly changing schemas |
 | **CockroachDB** | Distributed SQL, auto-scaling, PostgreSQL compatible | Newer, smaller ecosystem, higher latency for writes | Global distribution needs |
 
 **Recommendation:** **PostgreSQL with PostGIS** - Best balance of features, excellent geospatial support for geofencing, JSONB for flexible rule storage.
+
+**Azure Alternative:** **Azure SQL Database** for SQL Server compatibility with .NET, or **Azure Cosmos DB** for global distribution with built-in geospatial support.
 
 #### 4.2.2 Cache (Vessel State, Geofence State)
 
 | Option | Pros | Cons | Best For |
 |--------|------|------|----------|
 | **Redis** | Extremely fast, rich data structures, pub/sub, Lua scripting | Single-threaded, memory-bound | Hot data caching, real-time state |
+| **Azure Cache for Redis** | Fully managed Redis, Enterprise tier with active geo-replication, VNet integration | Azure lock-in, costs at scale | Azure deployments needing Redis |
 | **Memcached** | Simple, fast, multi-threaded | Limited data structures, no persistence | Simple key-value caching |
 | **Redis Cluster** | Horizontal scaling, high availability | More complex setup | Large-scale caching |
 
 **Recommendation:** **Redis Cluster** - Fast reads/writes for vessel state tracking, supports complex data structures for geofence state management.
+
+**Azure Alternative:** **Azure Cache for Redis** (Premium/Enterprise tier) provides managed Redis with clustering and geo-replication.
 
 ---
 
@@ -141,6 +152,8 @@ The message queue handles high-throughput vessel data ingestion and notification
 | Option | Pros | Cons | Best For |
 |--------|------|------|----------|
 | **Node.js (TypeScript)** | Excellent async I/O, large ecosystem, good for real-time apps, same language as frontend | Single-threaded CPU-bound tasks | Real-time, I/O heavy workloads |
+| **ASP.NET Core (C#)** | High performance, excellent tooling (Visual Studio), SignalR for real-time, enterprise-grade | Windows-centric ecosystem (though cross-platform), steeper learning curve | Enterprise .NET shops, Azure integration |
+| **.NET Minimal APIs** | Lightweight, fast startup, good for microservices, AOT compilation support | Less structured than full ASP.NET | Simple APIs, Azure Functions |
 | **Python (FastAPI)** | Clean syntax, excellent data processing libraries, good async support | Slower than Node.js for I/O, GIL limitations | Data processing, ML integration |
 | **Go** | Excellent concurrency, fast compilation, low memory footprint | Smaller ecosystem, more verbose | High-performance microservices |
 | **Rust** | Maximum performance, memory safety, zero-cost abstractions | Steeper learning curve, longer development time | Performance-critical components |
@@ -149,6 +162,11 @@ The message queue handles high-throughput vessel data ingestion and notification
 - **Node.js (TypeScript)** for API Gateway and WebSocket services (real-time focus)
 - **Go** for high-throughput data processing services (API poller, rule evaluator)
 
+**Azure/.NET Alternative:**
+- **ASP.NET Core** with **SignalR** for real-time WebSocket communication
+- **Azure Functions** (.NET) for serverless event processing
+- **Azure Container Apps** for microservices deployment
+
 ---
 
 ### 4.4 Real-Time Communication
@@ -156,11 +174,15 @@ The message queue handles high-throughput vessel data ingestion and notification
 | Option | Pros | Cons | Best For |
 |--------|------|------|----------|
 | **Socket.io** | Easy to use, automatic fallback, room support, widespread adoption | Higher overhead than raw WebSocket | Rapid development, browser compatibility |
+| **Azure SignalR Service** | Fully managed, auto-scaling, integrates with ASP.NET Core SignalR, serverless mode | Azure lock-in, costs at scale | .NET/Azure real-time apps |
+| **ASP.NET Core SignalR** | Built into .NET, strongly typed hubs, excellent performance | Requires .NET backend | .NET-based real-time apps |
 | **ws (Node.js)** | Lightweight, fast, low-level control | Requires manual reconnection logic, no built-in rooms | Performance-critical WebSocket |
 | **Pusher/Ably** | Fully managed, global infrastructure, presence features | Cost at scale, vendor dependency | Quick to market, global reach |
 | **GraphQL Subscriptions** | Type-safe, integrates with GraphQL API | Additional complexity if not using GraphQL | GraphQL-based systems |
 
 **Recommendation:** **Socket.io** for web (ease of use, automatic reconnection), **Firebase Cloud Messaging (FCM)** for mobile push.
+
+**Azure Alternative:** **Azure SignalR Service** provides fully managed SignalR with automatic scaling, or self-hosted **ASP.NET Core SignalR** for .NET backends.
 
 ---
 
@@ -169,10 +191,13 @@ The message queue handles high-throughput vessel data ingestion and notification
 | Option | Pros | Cons | Best For |
 |--------|------|------|----------|
 | **Firebase Cloud Messaging (FCM)** | Free, supports iOS/Android, reliable delivery | Google dependency, limited analytics | Cross-platform mobile push |
+| **Azure Notification Hubs** | Cross-platform (iOS, Android, Windows), tag-based routing, scales to millions, integrates with Azure | Azure lock-in, costs at scale | Azure-centric mobile apps |
 | **Amazon SNS** | AWS integration, supports multiple platforms | Less feature-rich than FCM | AWS-centric deployments |
 | **OneSignal** | Rich features, A/B testing, segmentation | Costs at scale | Marketing-focused notifications |
 
 **Recommendation:** **Firebase Cloud Messaging** - Industry standard, free tier sufficient, excellent reliability.
+
+**Azure Alternative:** **Azure Notification Hubs** provides cross-platform push with tag-based routing and scales to millions of devices.
 
 ---
 
@@ -181,11 +206,15 @@ The message queue handles high-throughput vessel data ingestion and notification
 | Option | Pros | Cons | Best For |
 |--------|------|------|----------|
 | **React** | Largest ecosystem, excellent tooling, component-based | Requires additional libraries for state management | Complex interactive UIs |
+| **Blazor WebAssembly** | C# in browser, share code with .NET backend, strong typing | Larger initial download, smaller ecosystem | .NET full-stack teams |
+| **Blazor Server** | C# UI, thin client, real-time via SignalR, fast initial load | Requires constant connection, latency-sensitive | Internal .NET enterprise apps |
 | **Vue.js** | Gentle learning curve, good documentation, built-in state management | Smaller ecosystem than React | Rapid development |
 | **Next.js (React)** | SSR/SSG, file-based routing, API routes, excellent DX | More opinionated, larger bundle size | Production React apps |
 | **SvelteKit** | Excellent performance, less boilerplate, compiled output | Smaller ecosystem, fewer developers | Performance-focused apps |
 
 **Recommendation:** **Next.js** - Best developer experience, built-in API routes for demo backend, excellent React ecosystem for maps and real-time features.
+
+**Azure/.NET Alternative:** **Blazor Server** for internal enterprise apps with real-time requirements (uses SignalR), or **Blazor WebAssembly** for full .NET stack with shared C# models.
 
 ---
 
@@ -208,10 +237,141 @@ The message queue handles high-throughput vessel data ingestion and notification
 | Option | Pros | Cons | Best For |
 |--------|------|------|----------|
 | **Kubernetes (K8s)** | Industry standard, auto-scaling, self-healing, portable | Complex setup, steep learning curve | Large-scale production |
+| **Azure Kubernetes Service (AKS)** | Managed K8s, Azure AD integration, Azure Monitor, easy scaling | Azure lock-in | Azure K8s deployments |
+| **Azure Container Apps** | Serverless containers, Dapr integration, auto-scaling, simpler than AKS | Less control than full K8s, newer service | Event-driven microservices |
+| **Azure App Service** | PaaS for web apps, built-in CI/CD, easy SSL, auto-scaling | Less flexibility than containers | Simple web app deployments |
 | **AWS ECS/Fargate** | Simpler than K8s, serverless option, AWS integration | Vendor lock-in | AWS deployments |
 | **Docker Compose** | Simple, good for development | Not production-ready for scale | Local development, small deployments |
 
 **Recommendation:** **Kubernetes** for production (portable, scalable), **Docker Compose** for local development.
+
+**Azure Alternative:** **Azure Container Apps** for serverless container deployment with built-in scaling, or **AKS** for full Kubernetes control. **Azure App Service** for simpler PaaS deployment.
+
+---
+
+### 4.9 Complete Azure/.NET Stack Summary
+
+For organizations preferring Microsoft technologies, here's the complete Azure/.NET alternative stack:
+
+| Component | Recommended | Azure/.NET Alternative |
+|-----------|-------------|------------------------|
+| **Message Queue** | Apache Kafka | Azure Event Hubs (Kafka API) or Azure Service Bus |
+| **Primary Database** | PostgreSQL + PostGIS | Azure SQL Database or Azure Cosmos DB |
+| **Cache** | Redis Cluster | Azure Cache for Redis |
+| **Backend Services** | Node.js (TypeScript) | ASP.NET Core (C#) |
+| **Real-Time** | Socket.io | Azure SignalR Service |
+| **Mobile Push** | Firebase (FCM) | Azure Notification Hubs |
+| **Frontend** | Next.js (React) | Blazor Server/WASM or React |
+| **Maps** | Mapbox GL JS | Azure Maps or Mapbox |
+| **Container Orchestration** | Kubernetes | AKS or Azure Container Apps |
+| **Serverless Functions** | - | Azure Functions |
+| **API Gateway** | - | Azure API Management |
+| **Identity** | - | Azure AD / Azure AD B2C |
+| **Monitoring** | - | Azure Monitor + Application Insights |
+
+#### Azure/.NET Architecture Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         AZURE/.NET ARCHITECTURE                              │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐         │
+│  │  Azure Event    │    │  Azure          │    │  Azure          │         │
+│  │  Hubs (Kafka)   │───▶│  Functions      │───▶│  Service Bus    │         │
+│  │                 │    │  (.NET)         │    │  (Topics)       │         │
+│  └─────────────────┘    └─────────────────┘    └────────┬────────┘         │
+│                                                          │                  │
+│  ┌─────────────────┐    ┌─────────────────┐             │                  │
+│  │  Azure SQL      │◀───│  ASP.NET Core   │◀────────────┘                  │
+│  │  Database       │    │  Web API        │                                 │
+│  └─────────────────┘    └────────┬────────┘                                 │
+│                                  │                                          │
+│  ┌─────────────────┐    ┌────────▼────────┐    ┌─────────────────┐         │
+│  │  Azure Cache    │◀───│  Azure SignalR  │───▶│  Blazor /       │         │
+│  │  for Redis      │    │  Service        │    │  React SPA      │         │
+│  └─────────────────┘    └─────────────────┘    └─────────────────┘         │
+│                                                                              │
+│  ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐         │
+│  │  Azure          │    │  Azure AD       │    │  Azure          │         │
+│  │  Notification   │    │  B2C            │    │  Monitor        │         │
+│  │  Hubs           │    │  (Identity)     │    │  + App Insights │         │
+│  └─────────────────┘    └─────────────────┘    └─────────────────┘         │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Key .NET Libraries
+
+| Purpose | Library |
+|---------|---------|
+| Web Framework | ASP.NET Core 8+ |
+| Real-Time | Microsoft.AspNetCore.SignalR |
+| ORM | Entity Framework Core |
+| Geospatial | NetTopologySuite |
+| Kafka Client | Confluent.Kafka |
+| Service Bus | Azure.Messaging.ServiceBus |
+| Caching | Microsoft.Extensions.Caching.StackExchangeRedis |
+| Push Notifications | Microsoft.Azure.NotificationHubs |
+| Maps | Azure.Maps.* SDKs |
+
+#### Sample ASP.NET Core SignalR Hub
+
+```csharp
+using Microsoft.AspNetCore.SignalR;
+
+public class NotificationHub : Hub
+{
+    public async Task SubscribeToClient(string clientId)
+    {
+        await Groups.AddToGroupAsync(Context.ConnectionId, $"client:{clientId}");
+    }
+
+    public async Task UnsubscribeFromClient(string clientId)
+    {
+        await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"client:{clientId}");
+    }
+}
+
+// Sending notifications from a service
+public class NotificationService
+{
+    private readonly IHubContext<NotificationHub> _hubContext;
+
+    public NotificationService(IHubContext<NotificationHub> hubContext)
+    {
+        _hubContext = hubContext;
+    }
+
+    public async Task SendNotification(string clientId, Notification notification)
+    {
+        await _hubContext.Clients
+            .Group($"client:{clientId}")
+            .SendAsync("notification", notification);
+    }
+
+    public async Task SendVesselUpdate(string clientId, VesselState vessel)
+    {
+        await _hubContext.Clients
+            .Group($"client:{clientId}")
+            .SendAsync("vessel:update", vessel);
+    }
+}
+```
+
+#### Azure Cost Estimate (.NET Stack)
+
+| Service | Specification | Est. Monthly Cost |
+|---------|---------------|-------------------|
+| Azure Container Apps | 2 vCPU, 4GB RAM | $50-100 |
+| Azure SQL Database | S2 (50 DTU) | $75 |
+| Azure Cache for Redis | C1 (1GB) | $40 |
+| Azure Event Hubs | Standard, 1 TU | $22 |
+| Azure SignalR Service | Standard, 1 unit | $50 |
+| Azure Notification Hubs | Basic | $10 |
+| **Total** | | **~$250-300/month** |
+
+*Costs vary by region and usage. Use Azure Pricing Calculator for accurate estimates.*
 
 ---
 
