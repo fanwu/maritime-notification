@@ -2539,7 +2539,581 @@ The code changes for this migration are minimal because:
 
 ---
 
-## 18. Open Questions & Future Considerations
+## 19. External Notification Channels
+
+Beyond the web application, notifications can be pushed to external channels for broader reach and integration with existing workflows.
+
+### 19.1 Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    Notification Service                              │
+│                                                                      │
+│  ┌──────────────┐    ┌─────────────────────────────────────────┐   │
+│  │ Notification │    │        Channel Dispatcher                │   │
+│  │   Created    │───▶│                                         │   │
+│  └──────────────┘    │  ┌─────────┐ ┌─────────┐ ┌──────────┐  │   │
+│                      │  │  Web    │ │ Mobile  │ │  Slack   │  │   │
+│                      │  │Socket.io│ │  Push   │ │ Webhook  │  │   │
+│                      │  └────┬────┘ └────┬────┘ └────┬─────┘  │   │
+│                      │       │           │           │         │   │
+│                      │  ┌────┴────┐ ┌────┴────┐ ┌────┴─────┐  │   │
+│                      │  │  Email  │ │   SMS   │ │ Webhook  │  │   │
+│                      │  │  SMTP   │ │ Twilio  │ │  Custom  │  │   │
+│                      │  └─────────┘ └─────────┘ └──────────┘  │   │
+│                      └─────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 19.2 Channel Configuration Model
+
+```typescript
+interface NotificationChannel {
+  id: string;
+  clientId: string;
+  type: 'email' | 'sms' | 'slack' | 'mobile_push' | 'webhook' | 'teams';
+  name: string;
+  config: ChannelConfig;
+  enabled: boolean;
+
+  // Filter which notifications go to this channel
+  notificationTypes: string[];  // ['geofence_alert', 'destination_change']
+  severityFilter?: ('info' | 'warning' | 'critical')[];
+}
+
+type ChannelConfig =
+  | EmailConfig
+  | SMSConfig
+  | SlackConfig
+  | MobilePushConfig
+  | WebhookConfig
+  | TeamsConfig;
+```
+
+### 19.3 Email Integration
+
+**Provider Options:** SendGrid, AWS SES, Mailgun, Postmark
+
+```typescript
+interface EmailConfig {
+  provider: 'sendgrid' | 'ses' | 'mailgun' | 'smtp';
+  recipients: string[];
+  fromAddress: string;
+  templateId?: string;  // Provider-specific template
+
+  // SMTP config (if provider = 'smtp')
+  smtp?: {
+    host: string;
+    port: number;
+    secure: boolean;
+    auth: { user: string; pass: string };
+  };
+}
+
+// Example: SendGrid Integration
+import sgMail from '@sendgrid/mail';
+
+async function sendEmailNotification(
+  notification: Notification,
+  config: EmailConfig
+) {
+  sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+
+  await sgMail.send({
+    to: config.recipients,
+    from: config.fromAddress,
+    subject: notification.title,
+    html: renderEmailTemplate(notification),
+    // Dynamic template (optional)
+    templateId: config.templateId,
+    dynamicTemplateData: {
+      vesselName: notification.data.vesselName,
+      eventType: notification.typeId,
+      timestamp: notification.createdAt,
+      details: notification.message,
+    },
+  });
+}
+```
+
+### 19.4 SMS Integration (Twilio)
+
+**Provider Options:** Twilio, AWS SNS, Vonage
+
+```typescript
+interface SMSConfig {
+  provider: 'twilio' | 'sns' | 'vonage';
+  recipients: string[];  // E.164 format: +1234567890
+
+  // Twilio config
+  twilio?: {
+    accountSid: string;
+    authToken: string;
+    fromNumber: string;
+  };
+}
+
+// Example: Twilio Integration
+import twilio from 'twilio';
+
+async function sendSMSNotification(
+  notification: Notification,
+  config: SMSConfig
+) {
+  const client = twilio(
+    config.twilio.accountSid,
+    config.twilio.authToken
+  );
+
+  const message = `[${notification.typeId}] ${notification.title}: ${notification.message}`;
+
+  await Promise.all(
+    config.recipients.map(to =>
+      client.messages.create({
+        body: message.substring(0, 160), // SMS limit
+        from: config.twilio.fromNumber,
+        to,
+      })
+    )
+  );
+}
+```
+
+### 19.5 Slack Integration
+
+**Method:** Incoming Webhooks or Slack App with Bot Token
+
+```typescript
+interface SlackConfig {
+  webhookUrl?: string;           // Simple: Incoming Webhook
+  botToken?: string;             // Advanced: Bot with OAuth
+  channel: string;               // #channel-name or channel ID
+  mentionUsers?: string[];       // ['U123ABC', 'U456DEF']
+  mentionGroups?: string[];      // ['@oncall', '@shipping-team']
+}
+
+// Example: Slack Webhook Integration
+async function sendSlackNotification(
+  notification: Notification,
+  config: SlackConfig
+) {
+  const emoji = {
+    geofence_alert: '📍',
+    destination_change: '🔄',
+    speed_alert: '⚡',
+  }[notification.typeId] || '🔔';
+
+  const payload = {
+    channel: config.channel,
+    blocks: [
+      {
+        type: 'header',
+        text: {
+          type: 'plain_text',
+          text: `${emoji} ${notification.title}`,
+        },
+      },
+      {
+        type: 'section',
+        fields: [
+          {
+            type: 'mrkdwn',
+            text: `*Vessel:*\n${notification.data.vesselName}`,
+          },
+          {
+            type: 'mrkdwn',
+            text: `*IMO:*\n${notification.data.imo}`,
+          },
+          {
+            type: 'mrkdwn',
+            text: `*Event:*\n${notification.message}`,
+          },
+          {
+            type: 'mrkdwn',
+            text: `*Time:*\n${new Date(notification.createdAt).toISOString()}`,
+          },
+        ],
+      },
+      {
+        type: 'actions',
+        elements: [
+          {
+            type: 'button',
+            text: { type: 'plain_text', text: 'View on Map' },
+            url: `${process.env.APP_URL}?vessel=${notification.data.imo}`,
+          },
+        ],
+      },
+    ],
+  };
+
+  // Add mentions if configured
+  if (config.mentionUsers?.length) {
+    payload.blocks.unshift({
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: config.mentionUsers.map(u => `<@${u}>`).join(' '),
+      },
+    });
+  }
+
+  await fetch(config.webhookUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+```
+
+### 19.6 Microsoft Teams Integration
+
+```typescript
+interface TeamsConfig {
+  webhookUrl: string;  // Teams Incoming Webhook URL
+}
+
+async function sendTeamsNotification(
+  notification: Notification,
+  config: TeamsConfig
+) {
+  const payload = {
+    '@type': 'MessageCard',
+    '@context': 'http://schema.org/extensions',
+    themeColor: notification.typeId === 'geofence_alert' ? '0076D7' : 'FFA500',
+    summary: notification.title,
+    sections: [{
+      activityTitle: notification.title,
+      facts: [
+        { name: 'Vessel', value: notification.data.vesselName },
+        { name: 'IMO', value: notification.data.imo },
+        { name: 'Event', value: notification.message },
+        { name: 'Time', value: new Date(notification.createdAt).toISOString() },
+      ],
+      markdown: true,
+    }],
+    potentialAction: [{
+      '@type': 'OpenUri',
+      name: 'View on Map',
+      targets: [{ os: 'default', uri: `${process.env.APP_URL}?vessel=${notification.data.imo}` }],
+    }],
+  };
+
+  await fetch(config.webhookUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+```
+
+### 19.7 Mobile Push Notifications
+
+**Provider Options:** Firebase Cloud Messaging (FCM), Apple Push Notification Service (APNs), OneSignal, Expo
+
+```typescript
+interface MobilePushConfig {
+  provider: 'fcm' | 'apns' | 'onesignal' | 'expo';
+
+  // FCM config
+  fcm?: {
+    serverKey: string;
+    projectId: string;
+  };
+
+  // Device tokens stored per user
+  // Retrieved from UserDevice table
+}
+
+// Example: Firebase Cloud Messaging
+import admin from 'firebase-admin';
+
+async function sendMobilePushNotification(
+  notification: Notification,
+  userDevices: UserDevice[]
+) {
+  const tokens = userDevices
+    .filter(d => d.platform === 'android' || d.platform === 'ios')
+    .map(d => d.pushToken);
+
+  if (tokens.length === 0) return;
+
+  const message = {
+    notification: {
+      title: notification.title,
+      body: notification.message,
+    },
+    data: {
+      notificationId: notification.id,
+      typeId: notification.typeId,
+      vesselImo: String(notification.data.imo),
+      click_action: 'OPEN_NOTIFICATION',
+    },
+    tokens,
+  };
+
+  const response = await admin.messaging().sendEachForMulticast(message);
+
+  // Handle failed tokens (remove invalid ones)
+  response.responses.forEach((resp, idx) => {
+    if (!resp.success && resp.error?.code === 'messaging/invalid-registration-token') {
+      // Remove invalid token from database
+      removeDeviceToken(tokens[idx]);
+    }
+  });
+}
+```
+
+### 19.8 Custom Webhook Integration
+
+For integrating with any external system:
+
+```typescript
+interface WebhookConfig {
+  url: string;
+  method: 'POST' | 'PUT';
+  headers?: Record<string, string>;
+  authType?: 'none' | 'basic' | 'bearer' | 'api_key';
+  authConfig?: {
+    username?: string;
+    password?: string;
+    token?: string;
+    apiKey?: string;
+    apiKeyHeader?: string;
+  };
+
+  // Transform notification to custom payload
+  payloadTemplate?: string;  // Handlebars template
+
+  // Retry configuration
+  retryAttempts?: number;
+  retryDelayMs?: number;
+}
+
+async function sendWebhookNotification(
+  notification: Notification,
+  config: WebhookConfig
+) {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...config.headers,
+  };
+
+  // Add authentication
+  if (config.authType === 'bearer') {
+    headers['Authorization'] = `Bearer ${config.authConfig.token}`;
+  } else if (config.authType === 'api_key') {
+    headers[config.authConfig.apiKeyHeader || 'X-API-Key'] = config.authConfig.apiKey;
+  }
+
+  // Build payload
+  const payload = config.payloadTemplate
+    ? renderTemplate(config.payloadTemplate, notification)
+    : {
+        id: notification.id,
+        type: notification.typeId,
+        title: notification.title,
+        message: notification.message,
+        data: notification.data,
+        timestamp: notification.createdAt,
+      };
+
+  // Send with retry
+  await sendWithRetry(
+    () => fetch(config.url, {
+      method: config.method,
+      headers,
+      body: JSON.stringify(payload),
+    }),
+    config.retryAttempts || 3,
+    config.retryDelayMs || 1000
+  );
+}
+```
+
+### 19.9 Channel Dispatcher Service
+
+Central service that routes notifications to appropriate channels:
+
+```typescript
+class ChannelDispatcher {
+  private channels: Map<string, NotificationChannel[]> = new Map();
+
+  async dispatch(notification: Notification) {
+    const clientChannels = await this.getClientChannels(notification.clientId);
+
+    const applicableChannels = clientChannels.filter(channel =>
+      channel.enabled &&
+      channel.notificationTypes.includes(notification.typeId)
+    );
+
+    const results = await Promise.allSettled(
+      applicableChannels.map(channel =>
+        this.sendToChannel(notification, channel)
+      )
+    );
+
+    // Log delivery status
+    results.forEach((result, idx) => {
+      const channel = applicableChannels[idx];
+      if (result.status === 'fulfilled') {
+        logger.info(`Notification ${notification.id} sent to ${channel.type}`);
+      } else {
+        logger.error(`Failed to send to ${channel.type}:`, result.reason);
+      }
+    });
+  }
+
+  private async sendToChannel(
+    notification: Notification,
+    channel: NotificationChannel
+  ) {
+    switch (channel.type) {
+      case 'email':
+        return sendEmailNotification(notification, channel.config as EmailConfig);
+      case 'sms':
+        return sendSMSNotification(notification, channel.config as SMSConfig);
+      case 'slack':
+        return sendSlackNotification(notification, channel.config as SlackConfig);
+      case 'teams':
+        return sendTeamsNotification(notification, channel.config as TeamsConfig);
+      case 'mobile_push':
+        return sendMobilePushNotification(notification, await this.getUserDevices(notification.clientId));
+      case 'webhook':
+        return sendWebhookNotification(notification, channel.config as WebhookConfig);
+    }
+  }
+}
+```
+
+### 19.10 Database Schema for Channels
+
+```prisma
+model NotificationChannel {
+  id               String   @id @default(uuid())
+  clientId         String
+  type             String   // email, sms, slack, mobile_push, webhook, teams
+  name             String
+  config           Json     // Channel-specific configuration
+  enabled          Boolean  @default(true)
+  notificationTypes String[] // Which notification types to send
+  severityFilter   String[] // Optional: filter by severity
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  // Delivery tracking
+  deliveries       ChannelDelivery[]
+
+  @@index([clientId, enabled])
+}
+
+model ChannelDelivery {
+  id               String   @id @default(uuid())
+  channelId        String
+  notificationId   String
+  status           String   // pending, sent, failed, bounced
+  attempts         Int      @default(0)
+  lastAttemptAt    DateTime?
+  errorMessage     String?
+  externalId       String?  // Provider's message ID
+  createdAt        DateTime @default(now())
+
+  channel          NotificationChannel @relation(fields: [channelId], references: [id])
+  notification     Notification @relation(fields: [notificationId], references: [id])
+
+  @@index([channelId, status])
+  @@index([notificationId])
+}
+
+model UserDevice {
+  id               String   @id @default(uuid())
+  userId           String
+  platform         String   // ios, android, web
+  pushToken        String   @unique
+  deviceName       String?
+  lastActiveAt     DateTime
+  createdAt        DateTime @default(now())
+
+  @@index([userId])
+}
+```
+
+### 19.11 Rate Limiting & Throttling
+
+Prevent notification spam on external channels:
+
+```typescript
+interface ChannelRateLimits {
+  email: { maxPerHour: 100, maxPerDay: 500 };
+  sms: { maxPerHour: 20, maxPerDay: 100 };
+  slack: { maxPerMinute: 10, maxPerHour: 100 };
+  mobile_push: { maxPerHour: 50, maxPerDay: 200 };
+}
+
+class RateLimiter {
+  async canSend(clientId: string, channelType: string): Promise<boolean> {
+    const limits = ChannelRateLimits[channelType];
+    const counts = await this.getRecentCounts(clientId, channelType);
+
+    return counts.lastHour < limits.maxPerHour &&
+           counts.lastDay < limits.maxPerDay;
+  }
+
+  async throttle(clientId: string, channelType: string) {
+    if (!await this.canSend(clientId, channelType)) {
+      throw new RateLimitExceeded(channelType);
+    }
+  }
+}
+```
+
+### 19.12 User Preferences UI
+
+Allow users to configure their notification channels:
+
+```typescript
+// API endpoints
+GET  /api/channels              // List user's configured channels
+POST /api/channels              // Add new channel
+PUT  /api/channels/:id          // Update channel config
+DELETE /api/channels/:id        // Remove channel
+
+GET  /api/channels/:id/test     // Send test notification
+
+// Example UI sections:
+// 1. Email Notifications
+//    - Add email addresses
+//    - Select notification types
+//    - Set quiet hours
+//
+// 2. Slack Integration
+//    - Connect Slack workspace (OAuth)
+//    - Select channel
+//    - Configure mentions
+//
+// 3. Mobile Push
+//    - Download mobile app
+//    - Enable/disable per notification type
+//
+// 4. SMS Alerts (Premium)
+//    - Add phone numbers
+//    - Critical alerts only
+```
+
+### 19.13 Implementation Phases
+
+| Phase | Channels | Effort |
+|-------|----------|--------|
+| Phase 1 | Email (SendGrid), Webhook | 1-2 weeks |
+| Phase 2 | Slack, Microsoft Teams | 1 week |
+| Phase 3 | Mobile Push (FCM) | 2-3 weeks |
+| Phase 4 | SMS (Twilio) | 1 week |
+
+**Phase 1 Priority:** Email and Webhook cover most enterprise use cases and integrate with existing systems.
+
+---
+
+## 20. Open Questions & Future Considerations
 
 1. **Multi-region deployment** - Needed for global clients?
 2. **Analytics** - Track notification engagement metrics?
@@ -2549,7 +3123,7 @@ The code changes for this migration are minimal because:
 
 ---
 
-## 19. Appendix
+## 21. Appendix
 
 ### A. Glossary
 
