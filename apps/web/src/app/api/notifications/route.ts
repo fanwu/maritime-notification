@@ -31,3 +31,14 @@ export async function GET(request: NextRequest) {
     }))
   );
 }
+
+// DELETE /api/notifications?clientId=xxx - Clear all notifications
+export async function DELETE(request: NextRequest) {
+  const clientId = request.nextUrl.searchParams.get('clientId') || 'demo-client';
+
+  const result = await prisma.notification.deleteMany({
+    where: { clientId },
+  });
+
+  return NextResponse.json({ deleted: result.count });
+}

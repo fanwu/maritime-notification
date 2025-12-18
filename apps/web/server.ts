@@ -71,6 +71,112 @@ let geofenceCache: Array<{ id: string; clientId: string; name: string; coordinat
 let lastGeofenceFetch = 0;
 const GEOFENCE_CACHE_TTL = 5000;
 
+// Cache client preferences (refresh every 5 seconds)
+interface ClientPreferences {
+  geofenceAlert: {
+    enabled: boolean;
+    geofenceIds: string[]; // Empty = all geofences
+  };
+  destinationChange: {
+    enabled: boolean;
+    from: string[];
+    to: string[];
+  };
+}
+let preferencesCache: Map<string, ClientPreferences> = new Map();
+let lastPreferencesFetch = 0;
+const PREFERENCES_CACHE_TTL = 5000;
+
+async function getClientPreferences(clientId: string): Promise<ClientPreferences> {
+  const now = Date.now();
+  if (now - lastPreferencesFetch > PREFERENCES_CACHE_TTL) {
+    // Refresh all client preferences
+    const rules = await prisma.clientRule.findMany({
+      where: { typeId: { in: ['geofence_alert', 'destination_change'] } },
+    });
+
+    preferencesCache.clear();
+
+    // Group by clientId
+    const clientRules = new Map<string, typeof rules>();
+    rules.forEach((rule) => {
+      const existing = clientRules.get(rule.clientId) || [];
+      existing.push(rule);
+      clientRules.set(rule.clientId, existing);
+    });
+
+    clientRules.forEach((rules, cId) => {
+      const geofenceRule = rules.find((r) => r.typeId === 'geofence_alert');
+      const destRule = rules.find((r) => r.typeId === 'destination_change');
+
+      let destCondition = { from: [] as string[], to: [] as string[] };
+      if (destRule) {
+        try {
+          const parsed = JSON.parse(destRule.condition);
+          destCondition.from = parsed.from || [];
+          destCondition.to = parsed.to || [];
+        } catch (e) {}
+      }
+
+      let geofenceCondition = { geofenceIds: [] as string[] };
+      if (geofenceRule) {
+        try {
+          const parsed = JSON.parse(geofenceRule.condition);
+          geofenceCondition.geofenceIds = parsed.geofenceIds || [];
+        } catch (e) {}
+      }
+
+      preferencesCache.set(cId, {
+        geofenceAlert: {
+          enabled: geofenceRule?.isActive ?? true,
+          geofenceIds: geofenceCondition.geofenceIds,
+        },
+        destinationChange: {
+          enabled: destRule?.isActive ?? true,
+          from: destCondition.from,
+          to: destCondition.to,
+        },
+      });
+    });
+
+    lastPreferencesFetch = now;
+    console.log(`[Preferences] Refreshed cache for ${preferencesCache.size} clients`);
+  }
+
+  // Return preferences for this client, or defaults
+  return preferencesCache.get(clientId) || {
+    geofenceAlert: { enabled: true, geofenceIds: [] },
+    destinationChange: { enabled: true, from: [], to: [] },
+  };
+}
+
+// Check if destination change matches user's filter preferences
+function matchesDestinationFilter(
+  previousDest: string,
+  currentDest: string,
+  prefs: ClientPreferences['destinationChange']
+): boolean {
+  if (!prefs.enabled) return false;
+
+  // Check "from" filter (if specified)
+  if (prefs.from.length > 0) {
+    const matchesFrom = prefs.from.some(
+      (f) => previousDest.toUpperCase().includes(f.toUpperCase())
+    );
+    if (!matchesFrom) return false;
+  }
+
+  // Check "to" filter (if specified)
+  if (prefs.to.length > 0) {
+    const matchesTo = prefs.to.some(
+      (t) => currentDest.toUpperCase().includes(t.toUpperCase())
+    );
+    if (!matchesTo) return false;
+  }
+
+  return true;
+}
+
 async function getGeofences() {
   const now = Date.now();
   if (now - lastGeofenceFetch > GEOFENCE_CACHE_TTL) {
@@ -117,25 +223,53 @@ async function processVesselUpdate(vessel: any, io: SocketIOServer) {
     if (isInside !== wasInside) {
       vesselGeofenceState.set(stateKey, isInside);
 
+      // Check if user has geofence alerts enabled
+      const prefs = await getClientPreferences(geofence.clientId);
+      if (!prefs.geofenceAlert.enabled) {
+        continue; // Skip notification if disabled
+      }
+
+      // Check if this geofence is in user's selected list (empty = all)
+      if (prefs.geofenceAlert.geofenceIds.length > 0 &&
+          !prefs.geofenceAlert.geofenceIds.includes(geofence.id)) {
+        console.log(`[Filtered] Geofence ${geofence.name} not in user's selected list`);
+        continue;
+      }
+
       const action = isInside ? 'entered' : 'exited';
-      const notification = {
-        id: `notif-${Date.now()}-${vessel.IMO}-${geofence.id}`,
-        clientId: geofence.clientId,
-        typeId: 'geofence_alert',
-        title: `Vessel ${action} ${geofence.name}`,
-        message: `${vessel.VesselName || `IMO ${vessel.IMO}`} has ${action} the ${geofence.name} geofence`,
-        payload: {
-          vesselName: vessel.VesselName,
-          imo: vessel.IMO,
-          latitude: vessel.Latitude,
-          longitude: vessel.Longitude,
-          action,
-          geofenceName: geofence.name,
-          geofenceId: geofence.id,
+      // Save notification to database (expires in 7 days)
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+      const dbNotification = await prisma.notification.create({
+        data: {
+          clientId: geofence.clientId,
+          typeId: 'geofence_alert',
+          title: `Vessel ${action} ${geofence.name}`,
+          message: `${vessel.VesselName || `IMO ${vessel.IMO}`} has ${action} the ${geofence.name} geofence`,
+          payload: JSON.stringify({
+            vesselName: vessel.VesselName,
+            imo: vessel.IMO,
+            latitude: vessel.Latitude,
+            longitude: vessel.Longitude,
+            action,
+            geofenceName: geofence.name,
+            geofenceId: geofence.id,
+          }),
+          priority: 'medium',
+          status: 'pending',
+          expiresAt,
         },
-        priority: 'medium',
-        status: 'pending',
-        createdAt: new Date().toISOString(),
+      });
+
+      const notification = {
+        id: dbNotification.id,
+        clientId: dbNotification.clientId,
+        typeId: dbNotification.typeId,
+        title: dbNotification.title,
+        message: dbNotification.message,
+        payload: JSON.parse(dbNotification.payload),
+        priority: dbNotification.priority,
+        status: dbNotification.status,
+        createdAt: dbNotification.createdAt.toISOString(),
       };
 
       console.log(`[Notification] ${notification.title}`);
@@ -148,27 +282,50 @@ async function processVesselUpdate(vessel: any, io: SocketIOServer) {
   const currentDestination = vessel.AISDestination;
 
   if (previousDestination !== undefined && previousDestination !== currentDestination) {
-    const notification = {
-      id: `notif-${Date.now()}-${vessel.IMO}-dest`,
-      clientId: 'demo-client',
-      typeId: 'destination_change',
-      title: `Destination Changed: ${vessel.VesselName || `IMO ${vessel.IMO}`}`,
-      message: `${vessel.VesselName || `IMO ${vessel.IMO}`} changed destination from "${previousDestination}" to "${currentDestination}"`,
-      payload: {
-        vesselName: vessel.VesselName,
-        imo: vessel.IMO,
-        latitude: vessel.Latitude,
-        longitude: vessel.Longitude,
-        previousValue: previousDestination,
-        currentValue: currentDestination,
-      },
-      priority: 'medium',
-      status: 'pending',
-      createdAt: new Date().toISOString(),
-    };
+    // Check if user has destination change alerts enabled and if it matches filters
+    const clientId = 'demo-client';
+    const prefs = await getClientPreferences(clientId);
 
-    console.log(`[Notification] ${notification.title}: ${previousDestination} -> ${currentDestination}`);
-    io.to('client:demo-client').emit('notification', notification);
+    if (matchesDestinationFilter(previousDestination, currentDestination, prefs.destinationChange)) {
+      // Save notification to database (expires in 7 days)
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+      const dbNotification = await prisma.notification.create({
+        data: {
+          clientId,
+          typeId: 'destination_change',
+          title: `Destination Changed: ${vessel.VesselName || `IMO ${vessel.IMO}`}`,
+          message: `${vessel.VesselName || `IMO ${vessel.IMO}`} changed destination from "${previousDestination}" to "${currentDestination}"`,
+          payload: JSON.stringify({
+            vesselName: vessel.VesselName,
+            imo: vessel.IMO,
+            latitude: vessel.Latitude,
+            longitude: vessel.Longitude,
+            previousValue: previousDestination,
+            currentValue: currentDestination,
+          }),
+          priority: 'medium',
+          status: 'pending',
+          expiresAt,
+        },
+      });
+
+      const notification = {
+        id: dbNotification.id,
+        clientId: dbNotification.clientId,
+        typeId: dbNotification.typeId,
+        title: dbNotification.title,
+        message: dbNotification.message,
+        payload: JSON.parse(dbNotification.payload),
+        priority: dbNotification.priority,
+        status: dbNotification.status,
+        createdAt: dbNotification.createdAt.toISOString(),
+      };
+
+      console.log(`[Notification] ${notification.title}: ${previousDestination} -> ${currentDestination}`);
+      io.to(`client:${clientId}`).emit('notification', notification);
+    } else {
+      console.log(`[Filtered] Destination change ${previousDestination} -> ${currentDestination} does not match user preferences`);
+    }
   }
 
   vesselDestinationState.set(vessel.IMO, currentDestination);

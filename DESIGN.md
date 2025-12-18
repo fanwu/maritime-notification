@@ -105,10 +105,14 @@ The message queue handles high-throughput vessel data ingestion and notification
 |--------|------|------|----------|
 | **Apache Kafka** | Extremely high throughput (millions/sec), durable, replay capability, excellent for event sourcing | Complex setup, requires ZooKeeper (or KRaft), higher operational overhead | Large scale, event sourcing needs |
 | **Amazon SQS + SNS** | Fully managed, no ops overhead, integrates with AWS Lambda, scales automatically | Vendor lock-in, higher latency than Kafka, limited message ordering | AWS-centric deployments |
+| **Azure Service Bus** | Enterprise-grade, AMQP support, dead-letter queues, sessions for ordering, integrates with Azure Functions | Azure vendor lock-in, costs at scale | Azure-centric deployments |
+| **Azure Event Hubs** | Kafka-compatible API, millions of events/sec, capture to Azure Storage, fully managed | Azure lock-in, less feature-rich than full Kafka | High-throughput Azure streaming |
 | **RabbitMQ** | Easy setup, flexible routing, good for complex routing patterns, lower latency | Lower throughput than Kafka, requires more manual scaling | Moderate scale, complex routing |
 | **Redis Streams** | Very low latency, simple setup, can double as cache | Less durable than Kafka, limited replay capability | Low-latency, moderate scale |
 
 **Recommendation:** **Apache Kafka** for production (handles scale, provides event replay for debugging), **Redis Streams** for initial development/demo (simpler setup).
+
+**Azure Alternative:** **Azure Event Hubs** with Kafka-compatible API allows using existing Kafka code with minimal changes, or **Azure Service Bus** for enterprise messaging patterns.
 
 ---
 
@@ -119,20 +123,27 @@ The message queue handles high-throughput vessel data ingestion and notification
 | Option | Pros | Cons | Best For |
 |--------|------|------|----------|
 | **PostgreSQL** | ACID compliance, excellent JSON support (JSONB), PostGIS for geospatial, mature ecosystem | Scaling requires more effort (read replicas, partitioning) | Complex queries, geospatial data |
+| **Azure SQL Database** | Fully managed SQL Server, built-in HA, auto-tuning, spatial data types | Azure lock-in, licensing costs | .NET/Azure enterprise deployments |
+| **Azure Cosmos DB** | Global distribution, multi-model (SQL, MongoDB, Cassandra), auto-scaling, geospatial queries | Cost at scale, eventual consistency by default | Global apps, flexible schema |
 | **MongoDB** | Flexible schema, built-in geospatial queries, horizontal scaling (sharding) | Less strict consistency, query performance can vary | Rapidly changing schemas |
 | **CockroachDB** | Distributed SQL, auto-scaling, PostgreSQL compatible | Newer, smaller ecosystem, higher latency for writes | Global distribution needs |
 
 **Recommendation:** **PostgreSQL with PostGIS** - Best balance of features, excellent geospatial support for geofencing, JSONB for flexible rule storage.
+
+**Azure Alternative:** **Azure SQL Database** for SQL Server compatibility with .NET, or **Azure Cosmos DB** for global distribution with built-in geospatial support.
 
 #### 4.2.2 Cache (Vessel State, Geofence State)
 
 | Option | Pros | Cons | Best For |
 |--------|------|------|----------|
 | **Redis** | Extremely fast, rich data structures, pub/sub, Lua scripting | Single-threaded, memory-bound | Hot data caching, real-time state |
+| **Azure Cache for Redis** | Fully managed Redis, Enterprise tier with active geo-replication, VNet integration | Azure lock-in, costs at scale | Azure deployments needing Redis |
 | **Memcached** | Simple, fast, multi-threaded | Limited data structures, no persistence | Simple key-value caching |
 | **Redis Cluster** | Horizontal scaling, high availability | More complex setup | Large-scale caching |
 
 **Recommendation:** **Redis Cluster** - Fast reads/writes for vessel state tracking, supports complex data structures for geofence state management.
+
+**Azure Alternative:** **Azure Cache for Redis** (Premium/Enterprise tier) provides managed Redis with clustering and geo-replication.
 
 ---
 
@@ -141,6 +152,8 @@ The message queue handles high-throughput vessel data ingestion and notification
 | Option | Pros | Cons | Best For |
 |--------|------|------|----------|
 | **Node.js (TypeScript)** | Excellent async I/O, large ecosystem, good for real-time apps, same language as frontend | Single-threaded CPU-bound tasks | Real-time, I/O heavy workloads |
+| **ASP.NET Core (C#)** | High performance, excellent tooling (Visual Studio), SignalR for real-time, enterprise-grade | Windows-centric ecosystem (though cross-platform), steeper learning curve | Enterprise .NET shops, Azure integration |
+| **.NET Minimal APIs** | Lightweight, fast startup, good for microservices, AOT compilation support | Less structured than full ASP.NET | Simple APIs, Azure Functions |
 | **Python (FastAPI)** | Clean syntax, excellent data processing libraries, good async support | Slower than Node.js for I/O, GIL limitations | Data processing, ML integration |
 | **Go** | Excellent concurrency, fast compilation, low memory footprint | Smaller ecosystem, more verbose | High-performance microservices |
 | **Rust** | Maximum performance, memory safety, zero-cost abstractions | Steeper learning curve, longer development time | Performance-critical components |
@@ -149,6 +162,11 @@ The message queue handles high-throughput vessel data ingestion and notification
 - **Node.js (TypeScript)** for API Gateway and WebSocket services (real-time focus)
 - **Go** for high-throughput data processing services (API poller, rule evaluator)
 
+**Azure/.NET Alternative:**
+- **ASP.NET Core** with **SignalR** for real-time WebSocket communication
+- **Azure Functions** (.NET) for serverless event processing
+- **Azure Container Apps** for microservices deployment
+
 ---
 
 ### 4.4 Real-Time Communication
@@ -156,11 +174,15 @@ The message queue handles high-throughput vessel data ingestion and notification
 | Option | Pros | Cons | Best For |
 |--------|------|------|----------|
 | **Socket.io** | Easy to use, automatic fallback, room support, widespread adoption | Higher overhead than raw WebSocket | Rapid development, browser compatibility |
+| **Azure SignalR Service** | Fully managed, auto-scaling, integrates with ASP.NET Core SignalR, serverless mode | Azure lock-in, costs at scale | .NET/Azure real-time apps |
+| **ASP.NET Core SignalR** | Built into .NET, strongly typed hubs, excellent performance | Requires .NET backend | .NET-based real-time apps |
 | **ws (Node.js)** | Lightweight, fast, low-level control | Requires manual reconnection logic, no built-in rooms | Performance-critical WebSocket |
 | **Pusher/Ably** | Fully managed, global infrastructure, presence features | Cost at scale, vendor dependency | Quick to market, global reach |
 | **GraphQL Subscriptions** | Type-safe, integrates with GraphQL API | Additional complexity if not using GraphQL | GraphQL-based systems |
 
 **Recommendation:** **Socket.io** for web (ease of use, automatic reconnection), **Firebase Cloud Messaging (FCM)** for mobile push.
+
+**Azure Alternative:** **Azure SignalR Service** provides fully managed SignalR with automatic scaling, or self-hosted **ASP.NET Core SignalR** for .NET backends.
 
 ---
 
@@ -169,10 +191,13 @@ The message queue handles high-throughput vessel data ingestion and notification
 | Option | Pros | Cons | Best For |
 |--------|------|------|----------|
 | **Firebase Cloud Messaging (FCM)** | Free, supports iOS/Android, reliable delivery | Google dependency, limited analytics | Cross-platform mobile push |
+| **Azure Notification Hubs** | Cross-platform (iOS, Android, Windows), tag-based routing, scales to millions, integrates with Azure | Azure lock-in, costs at scale | Azure-centric mobile apps |
 | **Amazon SNS** | AWS integration, supports multiple platforms | Less feature-rich than FCM | AWS-centric deployments |
 | **OneSignal** | Rich features, A/B testing, segmentation | Costs at scale | Marketing-focused notifications |
 
 **Recommendation:** **Firebase Cloud Messaging** - Industry standard, free tier sufficient, excellent reliability.
+
+**Azure Alternative:** **Azure Notification Hubs** provides cross-platform push with tag-based routing and scales to millions of devices.
 
 ---
 
@@ -181,11 +206,15 @@ The message queue handles high-throughput vessel data ingestion and notification
 | Option | Pros | Cons | Best For |
 |--------|------|------|----------|
 | **React** | Largest ecosystem, excellent tooling, component-based | Requires additional libraries for state management | Complex interactive UIs |
+| **Blazor WebAssembly** | C# in browser, share code with .NET backend, strong typing | Larger initial download, smaller ecosystem | .NET full-stack teams |
+| **Blazor Server** | C# UI, thin client, real-time via SignalR, fast initial load | Requires constant connection, latency-sensitive | Internal .NET enterprise apps |
 | **Vue.js** | Gentle learning curve, good documentation, built-in state management | Smaller ecosystem than React | Rapid development |
 | **Next.js (React)** | SSR/SSG, file-based routing, API routes, excellent DX | More opinionated, larger bundle size | Production React apps |
 | **SvelteKit** | Excellent performance, less boilerplate, compiled output | Smaller ecosystem, fewer developers | Performance-focused apps |
 
 **Recommendation:** **Next.js** - Best developer experience, built-in API routes for demo backend, excellent React ecosystem for maps and real-time features.
+
+**Azure/.NET Alternative:** **Blazor Server** for internal enterprise apps with real-time requirements (uses SignalR), or **Blazor WebAssembly** for full .NET stack with shared C# models.
 
 ---
 
@@ -208,10 +237,141 @@ The message queue handles high-throughput vessel data ingestion and notification
 | Option | Pros | Cons | Best For |
 |--------|------|------|----------|
 | **Kubernetes (K8s)** | Industry standard, auto-scaling, self-healing, portable | Complex setup, steep learning curve | Large-scale production |
+| **Azure Kubernetes Service (AKS)** | Managed K8s, Azure AD integration, Azure Monitor, easy scaling | Azure lock-in | Azure K8s deployments |
+| **Azure Container Apps** | Serverless containers, Dapr integration, auto-scaling, simpler than AKS | Less control than full K8s, newer service | Event-driven microservices |
+| **Azure App Service** | PaaS for web apps, built-in CI/CD, easy SSL, auto-scaling | Less flexibility than containers | Simple web app deployments |
 | **AWS ECS/Fargate** | Simpler than K8s, serverless option, AWS integration | Vendor lock-in | AWS deployments |
 | **Docker Compose** | Simple, good for development | Not production-ready for scale | Local development, small deployments |
 
 **Recommendation:** **Kubernetes** for production (portable, scalable), **Docker Compose** for local development.
+
+**Azure Alternative:** **Azure Container Apps** for serverless container deployment with built-in scaling, or **AKS** for full Kubernetes control. **Azure App Service** for simpler PaaS deployment.
+
+---
+
+### 4.9 Complete Azure/.NET Stack Summary
+
+For organizations preferring Microsoft technologies, here's the complete Azure/.NET alternative stack:
+
+| Component | Recommended | Azure/.NET Alternative |
+|-----------|-------------|------------------------|
+| **Message Queue** | Apache Kafka | Azure Event Hubs (Kafka API) or Azure Service Bus |
+| **Primary Database** | PostgreSQL + PostGIS | Azure SQL Database or Azure Cosmos DB |
+| **Cache** | Redis Cluster | Azure Cache for Redis |
+| **Backend Services** | Node.js (TypeScript) | ASP.NET Core (C#) |
+| **Real-Time** | Socket.io | Azure SignalR Service |
+| **Mobile Push** | Firebase (FCM) | Azure Notification Hubs |
+| **Frontend** | Next.js (React) | Blazor Server/WASM or React |
+| **Maps** | Mapbox GL JS | Azure Maps or Mapbox |
+| **Container Orchestration** | Kubernetes | AKS or Azure Container Apps |
+| **Serverless Functions** | - | Azure Functions |
+| **API Gateway** | - | Azure API Management |
+| **Identity** | - | Azure AD / Azure AD B2C |
+| **Monitoring** | - | Azure Monitor + Application Insights |
+
+#### Azure/.NET Architecture Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         AZURE/.NET ARCHITECTURE                              │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│  ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐         │
+│  │  Azure Event    │    │  Azure          │    │  Azure          │         │
+│  │  Hubs (Kafka)   │───▶│  Functions      │───▶│  Service Bus    │         │
+│  │                 │    │  (.NET)         │    │  (Topics)       │         │
+│  └─────────────────┘    └─────────────────┘    └────────┬────────┘         │
+│                                                          │                  │
+│  ┌─────────────────┐    ┌─────────────────┐             │                  │
+│  │  Azure SQL      │◀───│  ASP.NET Core   │◀────────────┘                  │
+│  │  Database       │    │  Web API        │                                 │
+│  └─────────────────┘    └────────┬────────┘                                 │
+│                                  │                                          │
+│  ┌─────────────────┐    ┌────────▼────────┐    ┌─────────────────┐         │
+│  │  Azure Cache    │◀───│  Azure SignalR  │───▶│  Blazor /       │         │
+│  │  for Redis      │    │  Service        │    │  React SPA      │         │
+│  └─────────────────┘    └─────────────────┘    └─────────────────┘         │
+│                                                                              │
+│  ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐         │
+│  │  Azure          │    │  Azure AD       │    │  Azure          │         │
+│  │  Notification   │    │  B2C            │    │  Monitor        │         │
+│  │  Hubs           │    │  (Identity)     │    │  + App Insights │         │
+│  └─────────────────┘    └─────────────────┘    └─────────────────┘         │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Key .NET Libraries
+
+| Purpose | Library |
+|---------|---------|
+| Web Framework | ASP.NET Core 8+ |
+| Real-Time | Microsoft.AspNetCore.SignalR |
+| ORM | Entity Framework Core |
+| Geospatial | NetTopologySuite |
+| Kafka Client | Confluent.Kafka |
+| Service Bus | Azure.Messaging.ServiceBus |
+| Caching | Microsoft.Extensions.Caching.StackExchangeRedis |
+| Push Notifications | Microsoft.Azure.NotificationHubs |
+| Maps | Azure.Maps.* SDKs |
+
+#### Sample ASP.NET Core SignalR Hub
+
+```csharp
+using Microsoft.AspNetCore.SignalR;
+
+public class NotificationHub : Hub
+{
+    public async Task SubscribeToClient(string clientId)
+    {
+        await Groups.AddToGroupAsync(Context.ConnectionId, $"client:{clientId}");
+    }
+
+    public async Task UnsubscribeFromClient(string clientId)
+    {
+        await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"client:{clientId}");
+    }
+}
+
+// Sending notifications from a service
+public class NotificationService
+{
+    private readonly IHubContext<NotificationHub> _hubContext;
+
+    public NotificationService(IHubContext<NotificationHub> hubContext)
+    {
+        _hubContext = hubContext;
+    }
+
+    public async Task SendNotification(string clientId, Notification notification)
+    {
+        await _hubContext.Clients
+            .Group($"client:{clientId}")
+            .SendAsync("notification", notification);
+    }
+
+    public async Task SendVesselUpdate(string clientId, VesselState vessel)
+    {
+        await _hubContext.Clients
+            .Group($"client:{clientId}")
+            .SendAsync("vessel:update", vessel);
+    }
+}
+```
+
+#### Azure Cost Estimate (.NET Stack)
+
+| Service | Specification | Est. Monthly Cost |
+|---------|---------------|-------------------|
+| Azure Container Apps | 2 vCPU, 4GB RAM | $50-100 |
+| Azure SQL Database | S2 (50 DTU) | $75 |
+| Azure Cache for Redis | C1 (1GB) | $40 |
+| Azure Event Hubs | Standard, 1 TU | $22 |
+| Azure SignalR Service | Standard, 1 unit | $50 |
+| Azure Notification Hubs | Basic | $10 |
+| **Total** | | **~$250-300/month** |
+
+*Costs vary by region and usage. Use Azure Pricing Calculator for accurate estimates.*
 
 ---
 
@@ -561,6 +721,19 @@ interface NotificationTypeDefinition {
   // What filters can be applied
   filterSchema: JSONSchema;
 
+  // UI schema for rendering user preference settings dynamically
+  preferencesUISchema?: {
+    sections: Array<{
+      key: string;           // Field path in condition, e.g., "from", "to"
+      label: string;         // Display label
+      type: 'multiselect' | 'select' | 'number' | 'toggle' | 'text';
+      options?: string[];    // Static options for select/multiselect
+      optionsSource?: string; // Dynamic options: "destinations", "vesselTypes", "ports"
+      placeholder?: string;
+      helpText?: string;
+    }>;
+  };
+
   // Notification template
   defaultTemplate: {
     title: string;          // Template with {{variables}}
@@ -670,10 +843,39 @@ interface NotificationTypeDefinition {
         "type": "object",
         "properties": {
           "field": { "enum": ["AISDestination", "AISDestinationPortID"] },
-          "to": { "type": "array", "items": { "type": "string" }, "description": "Optional: specific destinations to watch. Empty = any change" }
+          "from": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Only notify when leaving these destinations (empty = any)"
+          },
+          "to": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Only notify when arriving at these destinations (empty = any)"
+          }
         },
         "required": ["field"]
       }
+    },
+    "preferencesUISchema": {
+      "sections": [
+        {
+          "key": "from",
+          "label": "From Destinations",
+          "type": "multiselect",
+          "optionsSource": "destinations",
+          "placeholder": "Any destination",
+          "helpText": "Only notify when vessel leaves these destinations"
+        },
+        {
+          "key": "to",
+          "label": "To Destinations",
+          "type": "multiselect",
+          "optionsSource": "destinations",
+          "placeholder": "Any destination",
+          "helpText": "Only notify when vessel arrives at these destinations"
+        }
+      ]
     },
     "stateTracking": { "enabled": true, "transitionEvents": ["change"] },
     "defaultTemplate": {
@@ -802,7 +1004,112 @@ interface ClientRule {
 ]
 ```
 
-#### 5.3.3 Condition Evaluators
+#### 5.3.3 User Preferences & Filter Logic
+
+User preferences are stored within the `condition` object of each `ClientRule`. The `preferencesUISchema` in the type definition tells the UI how to render the preference settings dynamically.
+
+**Filter Evaluation Logic for `change` Evaluator:**
+
+```typescript
+function evaluateChangeCondition(
+  currentValue: any,
+  previousValue: any,
+  condition: { field: string; from?: string[]; to?: string[] }
+): boolean {
+  // No change = no notification
+  if (previousValue === currentValue) return false;
+
+  // Check "from" filter (if specified)
+  if (condition.from && condition.from.length > 0) {
+    if (!condition.from.includes(previousValue)) return false;
+  }
+
+  // Check "to" filter (if specified)
+  if (condition.to && condition.to.length > 0) {
+    if (!condition.to.includes(currentValue)) return false;
+  }
+
+  // All filters passed (or no filters set)
+  return true;
+}
+```
+
+**User Preference Scenarios:**
+
+| Scenario | `from` Filter | `to` Filter | Notification Triggered When |
+|----------|---------------|-------------|------------------------------|
+| All destination changes | `[]` (empty) | `[]` (empty) | Any destination change |
+| Leaving specific ports | `["SINGAPORE", "HK"]` | `[]` | Leaving Singapore OR Hong Kong (to anywhere) |
+| Arriving at specific ports | `[]` | `["ROTTERDAM", "DUBAI"]` | Arriving at Rotterdam OR Dubai (from anywhere) |
+| Specific route | `["SINGAPORE"]` | `["ROTTERDAM"]` | Only Singapore → Rotterdam route |
+| Multiple routes | `["SINGAPORE", "HK"]` | `["ROTTERDAM", "DUBAI"]` | SG→RTM, SG→DXB, HK→RTM, HK→DXB |
+
+**Example: Destination Change Rule with Filters**
+
+```json
+{
+  "id": "rule-dest-sg-rtm",
+  "clientId": "client-123",
+  "typeId": "destination_change",
+  "name": "Singapore to Rotterdam Route Watch",
+  "condition": {
+    "field": "AISDestination",
+    "from": ["SINGAPORE", "SG SIN", "SGSIN"],
+    "to": ["ROTTERDAM", "NL RTM", "NLRTM"]
+  },
+  "filters": {
+    "vesselTypes": ["Tanker"]
+  },
+  "settings": {
+    "priority": "high"
+  },
+  "isActive": true
+}
+```
+
+**Dynamic Preference UI Rendering:**
+
+The UI reads `preferencesUISchema` from the notification type definition and renders the appropriate form controls:
+
+```typescript
+// Pseudo-code for rendering preferences UI
+function renderPreferencesUI(typeDefinition: NotificationTypeDefinition) {
+  const { preferencesUISchema } = typeDefinition;
+
+  return preferencesUISchema.sections.map(section => {
+    switch (section.type) {
+      case 'multiselect':
+        const options = section.optionsSource
+          ? fetchOptionsFromSource(section.optionsSource)  // e.g., fetch destinations
+          : section.options;
+        return <MultiSelect
+          key={section.key}
+          label={section.label}
+          options={options}
+          placeholder={section.placeholder}
+          helpText={section.helpText}
+        />;
+      case 'number':
+        return <NumberInput key={section.key} label={section.label} />;
+      case 'toggle':
+        return <Toggle key={section.key} label={section.label} />;
+      // ... other types
+    }
+  });
+}
+```
+
+**Options Sources:**
+
+| Source | Description | Example Values |
+|--------|-------------|----------------|
+| `destinations` | Known AIS destinations | SINGAPORE, ROTTERDAM, DUBAI, HOUSTON, ... |
+| `vesselTypes` | Vessel type classifications | Tanker, Container, Dry, LNG, LPG |
+| `ports` | Port database | Port IDs or names |
+| `areas` | Geographic areas | Singapore Strait, Suez Canal, ... |
+| `operators` | Commercial operators | Operator IDs or names |
+
+#### 5.3.4 Condition Evaluators
 
 Evaluators are pluggable functions that implement a common interface:
 
@@ -885,7 +1192,7 @@ Then add a notification type definition (via API, no code deploy):
 }
 ```
 
-#### 5.3.4 Rules Engine Flow
+#### 5.3.5 Rules Engine Flow
 
 ```typescript
 async function processEvent(event: DataEvent): Promise<void> {
@@ -2392,7 +2699,581 @@ The code changes for this migration are minimal because:
 
 ---
 
-## 18. Open Questions & Future Considerations
+## 19. External Notification Channels
+
+Beyond the web application, notifications can be pushed to external channels for broader reach and integration with existing workflows.
+
+### 19.1 Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    Notification Service                              │
+│                                                                      │
+│  ┌──────────────┐    ┌─────────────────────────────────────────┐   │
+│  │ Notification │    │        Channel Dispatcher                │   │
+│  │   Created    │───▶│                                         │   │
+│  └──────────────┘    │  ┌─────────┐ ┌─────────┐ ┌──────────┐  │   │
+│                      │  │  Web    │ │ Mobile  │ │  Slack   │  │   │
+│                      │  │Socket.io│ │  Push   │ │ Webhook  │  │   │
+│                      │  └────┬────┘ └────┬────┘ └────┬─────┘  │   │
+│                      │       │           │           │         │   │
+│                      │  ┌────┴────┐ ┌────┴────┐ ┌────┴─────┐  │   │
+│                      │  │  Email  │ │   SMS   │ │ Webhook  │  │   │
+│                      │  │  SMTP   │ │ Twilio  │ │  Custom  │  │   │
+│                      │  └─────────┘ └─────────┘ └──────────┘  │   │
+│                      └─────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 19.2 Channel Configuration Model
+
+```typescript
+interface NotificationChannel {
+  id: string;
+  clientId: string;
+  type: 'email' | 'sms' | 'slack' | 'mobile_push' | 'webhook' | 'teams';
+  name: string;
+  config: ChannelConfig;
+  enabled: boolean;
+
+  // Filter which notifications go to this channel
+  notificationTypes: string[];  // ['geofence_alert', 'destination_change']
+  severityFilter?: ('info' | 'warning' | 'critical')[];
+}
+
+type ChannelConfig =
+  | EmailConfig
+  | SMSConfig
+  | SlackConfig
+  | MobilePushConfig
+  | WebhookConfig
+  | TeamsConfig;
+```
+
+### 19.3 Email Integration
+
+**Provider Options:** SendGrid, AWS SES, Mailgun, Postmark
+
+```typescript
+interface EmailConfig {
+  provider: 'sendgrid' | 'ses' | 'mailgun' | 'smtp';
+  recipients: string[];
+  fromAddress: string;
+  templateId?: string;  // Provider-specific template
+
+  // SMTP config (if provider = 'smtp')
+  smtp?: {
+    host: string;
+    port: number;
+    secure: boolean;
+    auth: { user: string; pass: string };
+  };
+}
+
+// Example: SendGrid Integration
+import sgMail from '@sendgrid/mail';
+
+async function sendEmailNotification(
+  notification: Notification,
+  config: EmailConfig
+) {
+  sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+
+  await sgMail.send({
+    to: config.recipients,
+    from: config.fromAddress,
+    subject: notification.title,
+    html: renderEmailTemplate(notification),
+    // Dynamic template (optional)
+    templateId: config.templateId,
+    dynamicTemplateData: {
+      vesselName: notification.data.vesselName,
+      eventType: notification.typeId,
+      timestamp: notification.createdAt,
+      details: notification.message,
+    },
+  });
+}
+```
+
+### 19.4 SMS Integration (Twilio)
+
+**Provider Options:** Twilio, AWS SNS, Vonage
+
+```typescript
+interface SMSConfig {
+  provider: 'twilio' | 'sns' | 'vonage';
+  recipients: string[];  // E.164 format: +1234567890
+
+  // Twilio config
+  twilio?: {
+    accountSid: string;
+    authToken: string;
+    fromNumber: string;
+  };
+}
+
+// Example: Twilio Integration
+import twilio from 'twilio';
+
+async function sendSMSNotification(
+  notification: Notification,
+  config: SMSConfig
+) {
+  const client = twilio(
+    config.twilio.accountSid,
+    config.twilio.authToken
+  );
+
+  const message = `[${notification.typeId}] ${notification.title}: ${notification.message}`;
+
+  await Promise.all(
+    config.recipients.map(to =>
+      client.messages.create({
+        body: message.substring(0, 160), // SMS limit
+        from: config.twilio.fromNumber,
+        to,
+      })
+    )
+  );
+}
+```
+
+### 19.5 Slack Integration
+
+**Method:** Incoming Webhooks or Slack App with Bot Token
+
+```typescript
+interface SlackConfig {
+  webhookUrl?: string;           // Simple: Incoming Webhook
+  botToken?: string;             // Advanced: Bot with OAuth
+  channel: string;               // #channel-name or channel ID
+  mentionUsers?: string[];       // ['U123ABC', 'U456DEF']
+  mentionGroups?: string[];      // ['@oncall', '@shipping-team']
+}
+
+// Example: Slack Webhook Integration
+async function sendSlackNotification(
+  notification: Notification,
+  config: SlackConfig
+) {
+  const emoji = {
+    geofence_alert: '📍',
+    destination_change: '🔄',
+    speed_alert: '⚡',
+  }[notification.typeId] || '🔔';
+
+  const payload = {
+    channel: config.channel,
+    blocks: [
+      {
+        type: 'header',
+        text: {
+          type: 'plain_text',
+          text: `${emoji} ${notification.title}`,
+        },
+      },
+      {
+        type: 'section',
+        fields: [
+          {
+            type: 'mrkdwn',
+            text: `*Vessel:*\n${notification.data.vesselName}`,
+          },
+          {
+            type: 'mrkdwn',
+            text: `*IMO:*\n${notification.data.imo}`,
+          },
+          {
+            type: 'mrkdwn',
+            text: `*Event:*\n${notification.message}`,
+          },
+          {
+            type: 'mrkdwn',
+            text: `*Time:*\n${new Date(notification.createdAt).toISOString()}`,
+          },
+        ],
+      },
+      {
+        type: 'actions',
+        elements: [
+          {
+            type: 'button',
+            text: { type: 'plain_text', text: 'View on Map' },
+            url: `${process.env.APP_URL}?vessel=${notification.data.imo}`,
+          },
+        ],
+      },
+    ],
+  };
+
+  // Add mentions if configured
+  if (config.mentionUsers?.length) {
+    payload.blocks.unshift({
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: config.mentionUsers.map(u => `<@${u}>`).join(' '),
+      },
+    });
+  }
+
+  await fetch(config.webhookUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+```
+
+### 19.6 Microsoft Teams Integration
+
+```typescript
+interface TeamsConfig {
+  webhookUrl: string;  // Teams Incoming Webhook URL
+}
+
+async function sendTeamsNotification(
+  notification: Notification,
+  config: TeamsConfig
+) {
+  const payload = {
+    '@type': 'MessageCard',
+    '@context': 'http://schema.org/extensions',
+    themeColor: notification.typeId === 'geofence_alert' ? '0076D7' : 'FFA500',
+    summary: notification.title,
+    sections: [{
+      activityTitle: notification.title,
+      facts: [
+        { name: 'Vessel', value: notification.data.vesselName },
+        { name: 'IMO', value: notification.data.imo },
+        { name: 'Event', value: notification.message },
+        { name: 'Time', value: new Date(notification.createdAt).toISOString() },
+      ],
+      markdown: true,
+    }],
+    potentialAction: [{
+      '@type': 'OpenUri',
+      name: 'View on Map',
+      targets: [{ os: 'default', uri: `${process.env.APP_URL}?vessel=${notification.data.imo}` }],
+    }],
+  };
+
+  await fetch(config.webhookUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+```
+
+### 19.7 Mobile Push Notifications
+
+**Provider Options:** Firebase Cloud Messaging (FCM), Apple Push Notification Service (APNs), OneSignal, Expo
+
+```typescript
+interface MobilePushConfig {
+  provider: 'fcm' | 'apns' | 'onesignal' | 'expo';
+
+  // FCM config
+  fcm?: {
+    serverKey: string;
+    projectId: string;
+  };
+
+  // Device tokens stored per user
+  // Retrieved from UserDevice table
+}
+
+// Example: Firebase Cloud Messaging
+import admin from 'firebase-admin';
+
+async function sendMobilePushNotification(
+  notification: Notification,
+  userDevices: UserDevice[]
+) {
+  const tokens = userDevices
+    .filter(d => d.platform === 'android' || d.platform === 'ios')
+    .map(d => d.pushToken);
+
+  if (tokens.length === 0) return;
+
+  const message = {
+    notification: {
+      title: notification.title,
+      body: notification.message,
+    },
+    data: {
+      notificationId: notification.id,
+      typeId: notification.typeId,
+      vesselImo: String(notification.data.imo),
+      click_action: 'OPEN_NOTIFICATION',
+    },
+    tokens,
+  };
+
+  const response = await admin.messaging().sendEachForMulticast(message);
+
+  // Handle failed tokens (remove invalid ones)
+  response.responses.forEach((resp, idx) => {
+    if (!resp.success && resp.error?.code === 'messaging/invalid-registration-token') {
+      // Remove invalid token from database
+      removeDeviceToken(tokens[idx]);
+    }
+  });
+}
+```
+
+### 19.8 Custom Webhook Integration
+
+For integrating with any external system:
+
+```typescript
+interface WebhookConfig {
+  url: string;
+  method: 'POST' | 'PUT';
+  headers?: Record<string, string>;
+  authType?: 'none' | 'basic' | 'bearer' | 'api_key';
+  authConfig?: {
+    username?: string;
+    password?: string;
+    token?: string;
+    apiKey?: string;
+    apiKeyHeader?: string;
+  };
+
+  // Transform notification to custom payload
+  payloadTemplate?: string;  // Handlebars template
+
+  // Retry configuration
+  retryAttempts?: number;
+  retryDelayMs?: number;
+}
+
+async function sendWebhookNotification(
+  notification: Notification,
+  config: WebhookConfig
+) {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...config.headers,
+  };
+
+  // Add authentication
+  if (config.authType === 'bearer') {
+    headers['Authorization'] = `Bearer ${config.authConfig.token}`;
+  } else if (config.authType === 'api_key') {
+    headers[config.authConfig.apiKeyHeader || 'X-API-Key'] = config.authConfig.apiKey;
+  }
+
+  // Build payload
+  const payload = config.payloadTemplate
+    ? renderTemplate(config.payloadTemplate, notification)
+    : {
+        id: notification.id,
+        type: notification.typeId,
+        title: notification.title,
+        message: notification.message,
+        data: notification.data,
+        timestamp: notification.createdAt,
+      };
+
+  // Send with retry
+  await sendWithRetry(
+    () => fetch(config.url, {
+      method: config.method,
+      headers,
+      body: JSON.stringify(payload),
+    }),
+    config.retryAttempts || 3,
+    config.retryDelayMs || 1000
+  );
+}
+```
+
+### 19.9 Channel Dispatcher Service
+
+Central service that routes notifications to appropriate channels:
+
+```typescript
+class ChannelDispatcher {
+  private channels: Map<string, NotificationChannel[]> = new Map();
+
+  async dispatch(notification: Notification) {
+    const clientChannels = await this.getClientChannels(notification.clientId);
+
+    const applicableChannels = clientChannels.filter(channel =>
+      channel.enabled &&
+      channel.notificationTypes.includes(notification.typeId)
+    );
+
+    const results = await Promise.allSettled(
+      applicableChannels.map(channel =>
+        this.sendToChannel(notification, channel)
+      )
+    );
+
+    // Log delivery status
+    results.forEach((result, idx) => {
+      const channel = applicableChannels[idx];
+      if (result.status === 'fulfilled') {
+        logger.info(`Notification ${notification.id} sent to ${channel.type}`);
+      } else {
+        logger.error(`Failed to send to ${channel.type}:`, result.reason);
+      }
+    });
+  }
+
+  private async sendToChannel(
+    notification: Notification,
+    channel: NotificationChannel
+  ) {
+    switch (channel.type) {
+      case 'email':
+        return sendEmailNotification(notification, channel.config as EmailConfig);
+      case 'sms':
+        return sendSMSNotification(notification, channel.config as SMSConfig);
+      case 'slack':
+        return sendSlackNotification(notification, channel.config as SlackConfig);
+      case 'teams':
+        return sendTeamsNotification(notification, channel.config as TeamsConfig);
+      case 'mobile_push':
+        return sendMobilePushNotification(notification, await this.getUserDevices(notification.clientId));
+      case 'webhook':
+        return sendWebhookNotification(notification, channel.config as WebhookConfig);
+    }
+  }
+}
+```
+
+### 19.10 Database Schema for Channels
+
+```prisma
+model NotificationChannel {
+  id               String   @id @default(uuid())
+  clientId         String
+  type             String   // email, sms, slack, mobile_push, webhook, teams
+  name             String
+  config           Json     // Channel-specific configuration
+  enabled          Boolean  @default(true)
+  notificationTypes String[] // Which notification types to send
+  severityFilter   String[] // Optional: filter by severity
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  // Delivery tracking
+  deliveries       ChannelDelivery[]
+
+  @@index([clientId, enabled])
+}
+
+model ChannelDelivery {
+  id               String   @id @default(uuid())
+  channelId        String
+  notificationId   String
+  status           String   // pending, sent, failed, bounced
+  attempts         Int      @default(0)
+  lastAttemptAt    DateTime?
+  errorMessage     String?
+  externalId       String?  // Provider's message ID
+  createdAt        DateTime @default(now())
+
+  channel          NotificationChannel @relation(fields: [channelId], references: [id])
+  notification     Notification @relation(fields: [notificationId], references: [id])
+
+  @@index([channelId, status])
+  @@index([notificationId])
+}
+
+model UserDevice {
+  id               String   @id @default(uuid())
+  userId           String
+  platform         String   // ios, android, web
+  pushToken        String   @unique
+  deviceName       String?
+  lastActiveAt     DateTime
+  createdAt        DateTime @default(now())
+
+  @@index([userId])
+}
+```
+
+### 19.11 Rate Limiting & Throttling
+
+Prevent notification spam on external channels:
+
+```typescript
+interface ChannelRateLimits {
+  email: { maxPerHour: 100, maxPerDay: 500 };
+  sms: { maxPerHour: 20, maxPerDay: 100 };
+  slack: { maxPerMinute: 10, maxPerHour: 100 };
+  mobile_push: { maxPerHour: 50, maxPerDay: 200 };
+}
+
+class RateLimiter {
+  async canSend(clientId: string, channelType: string): Promise<boolean> {
+    const limits = ChannelRateLimits[channelType];
+    const counts = await this.getRecentCounts(clientId, channelType);
+
+    return counts.lastHour < limits.maxPerHour &&
+           counts.lastDay < limits.maxPerDay;
+  }
+
+  async throttle(clientId: string, channelType: string) {
+    if (!await this.canSend(clientId, channelType)) {
+      throw new RateLimitExceeded(channelType);
+    }
+  }
+}
+```
+
+### 19.12 User Preferences UI
+
+Allow users to configure their notification channels:
+
+```typescript
+// API endpoints
+GET  /api/channels              // List user's configured channels
+POST /api/channels              // Add new channel
+PUT  /api/channels/:id          // Update channel config
+DELETE /api/channels/:id        // Remove channel
+
+GET  /api/channels/:id/test     // Send test notification
+
+// Example UI sections:
+// 1. Email Notifications
+//    - Add email addresses
+//    - Select notification types
+//    - Set quiet hours
+//
+// 2. Slack Integration
+//    - Connect Slack workspace (OAuth)
+//    - Select channel
+//    - Configure mentions
+//
+// 3. Mobile Push
+//    - Download mobile app
+//    - Enable/disable per notification type
+//
+// 4. SMS Alerts (Premium)
+//    - Add phone numbers
+//    - Critical alerts only
+```
+
+### 19.13 Implementation Phases
+
+| Phase | Channels | Effort |
+|-------|----------|--------|
+| Phase 1 | Email (SendGrid), Webhook | 1-2 weeks |
+| Phase 2 | Slack, Microsoft Teams | 1 week |
+| Phase 3 | Mobile Push (FCM) | 2-3 weeks |
+| Phase 4 | SMS (Twilio) | 1 week |
+
+**Phase 1 Priority:** Email and Webhook cover most enterprise use cases and integrate with existing systems.
+
+---
+
+## 20. Open Questions & Future Considerations
 
 1. **Multi-region deployment** - Needed for global clients?
 2. **Analytics** - Track notification engagement metrics?
@@ -2402,7 +3283,7 @@ The code changes for this migration are minimal because:
 
 ---
 
-## 19. Appendix
+## 21. Appendix
 
 ### A. Glossary
 
