@@ -7,7 +7,6 @@ import 'mapbox-gl/dist/mapbox-gl.css';
 import '@mapbox/mapbox-gl-draw/dist/mapbox-gl-draw.css';
 import type { VesselState, Geofence } from '@/types';
 import { config } from '@/lib/config';
-import { isOnWater } from '@/lib/geo';
 
 export interface MapViewHandle {
   focusVessel: (imo: number) => void;
@@ -25,7 +24,6 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView({ vesse
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const draw = useRef<MapboxDraw | null>(null);
-  const markers = useRef<Map<number, mapboxgl.Marker>>(new Map());
   const [isDrawing, setIsDrawing] = useState(false);
   const [showNameModal, setShowNameModal] = useState(false);
   const [pendingGeofence, setPendingGeofence] = useState<[number, number][] | null>(null);
@@ -35,34 +33,37 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView({ vesse
   // Create the handle object - we'll update focusGeofence when geofences change
   const geofencesRef = useRef(geofences);
   geofencesRef.current = geofences;
+  const vesselsRef = useRef(vessels);
+  vesselsRef.current = vessels;
 
   const handleRef = useRef<MapViewHandle>({
     focusVessel: (imo: number) => {
-      const marker = markers.current.get(imo);
-      if (marker && map.current) {
-        const lngLat = marker.getLngLat();
-
-        // Close all other popups first
-        markers.current.forEach((m) => {
-          const popup = m.getPopup();
-          if (popup && popup.isOpen()) {
-            m.togglePopup();
-          }
-        });
-
-        // Pan to vessel location
+      const vessel = vesselsRef.current.find((v) => v.IMO === imo);
+      if (vessel && map.current) {
+        // Fly to vessel location
         map.current.flyTo({
-          center: [lngLat.lng, lngLat.lat],
+          center: [vessel.Longitude, vessel.Latitude],
           zoom: 10,
           duration: 1000,
         });
 
-        // Open the popup after fly animation
+        // Show popup for the vessel
         setTimeout(() => {
-          const popup = marker.getPopup();
-          if (popup && !popup.isOpen()) {
-            marker.togglePopup();
-          }
+          if (!map.current) return;
+          new mapboxgl.Popup({ offset: 15 })
+            .setLngLat([vessel.Longitude, vessel.Latitude])
+            .setHTML(`
+              <div class="p-3">
+                <h3 class="font-semibold text-gray-900">${vessel.VesselName || `IMO: ${vessel.IMO}`}</h3>
+                <p class="text-sm text-gray-500">${vessel.VesselType || ''} - ${vessel.VesselClass || ''}</p>
+                <div class="mt-2 text-sm space-y-1">
+                  <div><span class="text-gray-500">Speed:</span> ${vessel.Speed || 0} kn</div>
+                  <div><span class="text-gray-500">Destination:</span> ${vessel.AISDestination || 'N/A'}</div>
+                  <div><span class="text-gray-500">Area:</span> ${vessel.AreaName || 'N/A'}</div>
+                </div>
+              </div>
+            `)
+            .addTo(map.current);
         }, 1100);
       }
     },
@@ -182,6 +183,127 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView({ vesse
         },
       });
 
+      // Add vessels source with clustering
+      map.current?.addSource('vessels', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+        cluster: true,
+        clusterMaxZoom: 10,
+        clusterRadius: 50,
+      });
+
+      // Cluster circles
+      map.current?.addLayer({
+        id: 'vessel-clusters',
+        type: 'circle',
+        source: 'vessels',
+        filter: ['has', 'point_count'],
+        paint: {
+          'circle-color': [
+            'step',
+            ['get', 'point_count'],
+            '#51bbd6', 100,
+            '#f1f075', 500,
+            '#f28cb1'
+          ],
+          'circle-radius': [
+            'step',
+            ['get', 'point_count'],
+            15, 100,
+            20, 500,
+            25
+          ],
+          'circle-stroke-width': 2,
+          'circle-stroke-color': '#fff',
+        },
+      });
+
+      // Cluster count labels
+      map.current?.addLayer({
+        id: 'vessel-cluster-count',
+        type: 'symbol',
+        source: 'vessels',
+        filter: ['has', 'point_count'],
+        layout: {
+          'text-field': '{point_count_abbreviated}',
+          'text-font': ['DIN Offc Pro Medium', 'Arial Unicode MS Bold'],
+          'text-size': 12,
+        },
+      });
+
+      // Individual vessel points
+      map.current?.addLayer({
+        id: 'vessel-points',
+        type: 'circle',
+        source: 'vessels',
+        filter: ['!', ['has', 'point_count']],
+        paint: {
+          'circle-color': [
+            'match',
+            ['get', 'vesselType'],
+            'Tanker', '#ef4444',
+            'Cargo', '#3b82f6',
+            'Container', '#22c55e',
+            '#6b7280'
+          ],
+          'circle-radius': 6,
+          'circle-stroke-width': 2,
+          'circle-stroke-color': '#fff',
+        },
+      });
+
+      // Click on cluster to zoom
+      map.current?.on('click', 'vessel-clusters', (e) => {
+        const features = map.current?.queryRenderedFeatures(e.point, { layers: ['vessel-clusters'] });
+        if (!features?.length) return;
+        const clusterId = features[0].properties?.cluster_id;
+        const source = map.current?.getSource('vessels') as mapboxgl.GeoJSONSource;
+        source.getClusterExpansionZoom(clusterId, (err, zoom) => {
+          if (err || !map.current) return;
+          const geometry = features[0].geometry as GeoJSON.Point;
+          map.current.easeTo({
+            center: geometry.coordinates as [number, number],
+            zoom: zoom || 10,
+          });
+        });
+      });
+
+      // Click on vessel point for popup
+      map.current?.on('click', 'vessel-points', (e) => {
+        const features = map.current?.queryRenderedFeatures(e.point, { layers: ['vessel-points'] });
+        if (!features?.length) return;
+        const props = features[0].properties;
+        const geometry = features[0].geometry as GeoJSON.Point;
+        new mapboxgl.Popup({ offset: 15 })
+          .setLngLat(geometry.coordinates as [number, number])
+          .setHTML(`
+            <div class="p-3">
+              <h3 class="font-semibold text-gray-900">${props?.vesselName || `IMO: ${props?.imo}`}</h3>
+              <p class="text-sm text-gray-500">${props?.vesselType || ''} - ${props?.vesselClass || ''}</p>
+              <div class="mt-2 text-sm space-y-1">
+                <div><span class="text-gray-500">Speed:</span> ${props?.speed || 0} kn</div>
+                <div><span class="text-gray-500">Destination:</span> ${props?.destination || 'N/A'}</div>
+                <div><span class="text-gray-500">Area:</span> ${props?.area || 'N/A'}</div>
+              </div>
+            </div>
+          `)
+          .addTo(map.current!);
+      });
+
+      // Cursor changes
+      map.current?.on('mouseenter', 'vessel-clusters', () => {
+        if (map.current) map.current.getCanvas().style.cursor = 'pointer';
+      });
+      map.current?.on('mouseleave', 'vessel-clusters', () => {
+        if (map.current) map.current.getCanvas().style.cursor = '';
+      });
+      map.current?.on('mouseenter', 'vessel-points', () => {
+        if (map.current) map.current.getCanvas().style.cursor = 'pointer';
+      });
+      map.current?.on('mouseleave', 'vessel-points', () => {
+        if (map.current) map.current.getCanvas().style.cursor = '';
+      });
+
       // Mark map as loaded so geofences can be rendered
       setMapLoaded(true);
     });
@@ -214,97 +336,55 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView({ vesse
     });
   }, [geofences, mapLoaded]);
 
-  // Update vessel markers
+  // Update vessels GeoJSON source (fast WebGL rendering with clustering)
   useEffect(() => {
-    if (!map.current) return;
+    if (!mapLoaded || !map.current) {
+      console.log('[MapView] Skipping vessel update - map not ready');
+      return;
+    }
 
-    // Update existing markers or create new ones
-    vessels.forEach((vessel) => {
-      let marker = markers.current.get(vessel.IMO);
+    const source = map.current.getSource('vessels') as mapboxgl.GeoJSONSource;
+    if (!source) {
+      console.log('[MapView] Vessels source not found');
+      return;
+    }
 
-      // Check if vessel is on water
-      const onWater = isOnWater(vessel.Longitude, vessel.Latitude);
+    console.log(`[MapView] Updating ${vessels.length} vessels on map`);
 
-      if (!onWater) {
-        // If vessel is on land, remove marker if it exists
-        if (marker) {
-          marker.remove();
-          markers.current.delete(vessel.IMO);
-        }
-        return; // Skip this vessel
-      }
+    // Convert vessels to GeoJSON features
+    const features = vessels
+      .filter((v) =>
+        typeof v.Longitude === 'number' &&
+        typeof v.Latitude === 'number' &&
+        !isNaN(v.Longitude) &&
+        !isNaN(v.Latitude)
+      )
+      .map((vessel) => ({
+        type: 'Feature' as const,
+        properties: {
+          imo: vessel.IMO,
+          vesselName: vessel.VesselName || '',
+          vesselType: vessel.VesselType || '',
+          vesselClass: vessel.VesselClass || '',
+          speed: vessel.Speed || 0,
+          heading: vessel.Heading || 0,
+          destination: vessel.AISDestination || '',
+          status: vessel.VesselVoyageStatus || '',
+          area: vessel.AreaName || '',
+        },
+        geometry: {
+          type: 'Point' as const,
+          coordinates: [vessel.Longitude, vessel.Latitude],
+        },
+      }));
 
-      if (marker) {
-        // Update position
-        marker.setLngLat([vessel.Longitude, vessel.Latitude]);
-      } else {
-        // Create new marker
-        const el = document.createElement('div');
-        el.className = 'vessel-marker';
-        el.style.width = '20px';
-        el.style.height = '20px';
-        el.style.backgroundColor = getVesselColor(vessel.VesselType);
-        el.style.borderRadius = '50%';
-        el.style.border = '2px solid white';
-        el.style.boxShadow = '0 2px 4px rgba(0,0,0,0.3)';
-        el.style.cursor = 'pointer';
-
-        // Add rotation indicator
-        const arrow = document.createElement('div');
-        arrow.style.width = '0';
-        arrow.style.height = '0';
-        arrow.style.borderLeft = '4px solid transparent';
-        arrow.style.borderRight = '4px solid transparent';
-        arrow.style.borderBottom = '8px solid white';
-        arrow.style.position = 'absolute';
-        arrow.style.top = '-6px';
-        arrow.style.left = '4px';
-        arrow.style.transform = `rotate(${vessel.Heading || 0}deg)`;
-        el.appendChild(arrow);
-
-        marker = new mapboxgl.Marker(el)
-          .setLngLat([vessel.Longitude, vessel.Latitude])
-          .setPopup(
-            new mapboxgl.Popup({ offset: 25, closeButton: true }).setHTML(`
-              <div class="p-3 pr-8">
-                <h3 class="font-semibold text-gray-900">${vessel.VesselName || `IMO: ${vessel.IMO}`}</h3>
-                <p class="text-sm text-gray-500 mt-0.5">${vessel.VesselType} - ${vessel.VesselClass}</p>
-                <div class="mt-3 space-y-1 text-sm">
-                  <div class="flex justify-between">
-                    <span class="text-gray-500">Speed</span>
-                    <span class="font-medium text-gray-900">${vessel.Speed} kn</span>
-                  </div>
-                  <div class="flex justify-between">
-                    <span class="text-gray-500">Status</span>
-                    <span class="font-medium text-gray-900">${vessel.VesselVoyageStatus}</span>
-                  </div>
-                  <div class="flex justify-between">
-                    <span class="text-gray-500">Destination</span>
-                    <span class="font-medium text-gray-900">${vessel.AISDestination || 'N/A'}</span>
-                  </div>
-                  <div class="flex justify-between">
-                    <span class="text-gray-500">Area</span>
-                    <span class="font-medium text-gray-900">${vessel.AreaName}</span>
-                  </div>
-                </div>
-              </div>
-            `)
-          )
-          .addTo(map.current!);
-
-        markers.current.set(vessel.IMO, marker);
-      }
+    source.setData({
+      type: 'FeatureCollection',
+      features,
     });
 
-    // Remove markers for vessels that are no longer in the list
-    const currentIMOs = new Set(vessels.map((v) => v.IMO));
-    markers.current.forEach((marker, imo) => {
-      if (!currentIMOs.has(imo)) {
-        marker.remove();
-        markers.current.delete(imo);
-      }
-    });
-  }, [vessels]);
+    console.log(`[MapView] Rendered ${features.length} valid vessels`);
+  }, [vessels, mapLoaded]);
 
   const handleSaveGeofence = useCallback(() => {
     if (!pendingGeofence || !geofenceName.trim()) return;
@@ -321,17 +401,6 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView({ vesse
     setPendingGeofence(null);
     setGeofenceName('');
   }, [pendingGeofence, geofenceName, onGeofenceCreate]);
-
-  const getVesselColor = (type: string): string => {
-    const colors: Record<string, string> = {
-      Tanker: '#ef4444',
-      Dry: '#f59e0b',
-      Container: '#3b82f6',
-      LNG: '#10b981',
-      LPG: '#8b5cf6',
-    };
-    return colors[type] || '#6b7280';
-  };
 
   if (!config.mapboxToken) {
     return (

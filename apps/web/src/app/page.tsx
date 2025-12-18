@@ -12,6 +12,7 @@ import type { MapViewHandle } from '@/components/MapView';
 import NotificationCenter from '@/components/NotificationCenter';
 import GeofenceList from '@/components/GeofenceList';
 import NotificationSettings from '@/components/NotificationSettings';
+import DataSummary from '@/components/DataSummary';
 
 const MapView = dynamic(() => import('@/components/MapView'), {
   ssr: false,
@@ -51,6 +52,21 @@ export default function Home() {
       .then((data) => {
         setNotifications(data);
         setUnreadCount(data.filter((n: Notification) => n.status !== 'read').length);
+      })
+      .catch(console.error);
+
+    // Fetch all cached vessel positions
+    fetch('/api/vessels')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.vessels) {
+          const vesselMap = new Map<number, VesselState>();
+          data.vessels.forEach((v: VesselState) => {
+            vesselMap.set(v.IMO, v);
+          });
+          setVessels(vesselMap);
+          console.log(`Loaded ${data.vessels.length} vessels from cache`);
+        }
       })
       .catch(console.error);
   }, []);
@@ -169,8 +185,13 @@ export default function Home() {
               <span className="text-gray-600">{isConnected ? 'Connected' : 'Disconnected'}</span>
             </div>
             <span className="text-gray-300">|</span>
-            <span className="text-gray-600">{vessels.size} vessels</span>
+            <span className="text-gray-600">{vessels.size} live</span>
           </div>
+        </div>
+
+        {/* Data Summary */}
+        <div className="p-4 border-b border-gray-200">
+          <DataSummary />
         </div>
 
         {/* Geofences */}

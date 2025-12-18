@@ -450,4 +450,85 @@ CREATE INDEX idx_preferences_client ON user_preferences(client_id);
 | Data Loss | 0 notifications lost | Audit logs |
 | Cost | < $1,500/month | AWS billing |
 
+### 21.10 Dynamic Data Discovery
+
+Since destinations and other vessel attributes are not known in advance, the system needs to discover and cache these values dynamically from incoming Kafka messages.
+
+#### 21.10.1 Data to Discover
+
+| Field | Source | Use Case |
+|-------|--------|----------|
+| `AISDestination` | Vessel messages | Destination change alerts - "notify when destination changes TO X" |
+| `AreaName` / `AreaNameLevel1` | Vessel messages | Area-based filtering and alerts |
+| `VesselType` | Vessel messages | Filter rules by vessel type |
+| `VesselClass` | Vessel messages | Filter rules by vessel class |
+| `VesselVoyageStatus` | Vessel messages | Status change alerts |
+
+#### 21.10.2 Implementation Approach
+
+```typescript
+// packages/vessel-processor/src/discovery.ts
+
+// Store unique values in Redis Sets
+async function trackDiscoveredValues(vessel: VesselState): Promise<void> {
+  const redis = getRedis();
+  const pipeline = redis.pipeline();
+
+  // Track destinations
+  if (vessel.AISDestination) {
+    pipeline.sadd('discovered:destinations', vessel.AISDestination);
+  }
+
+  // Track areas
+  if (vessel.AreaName) {
+    pipeline.sadd('discovered:areas', vessel.AreaName);
+  }
+  if (vessel.AreaNameLevel1) {
+    pipeline.sadd('discovered:areas:level1', vessel.AreaNameLevel1);
+  }
+
+  // Track vessel types and classes
+  if (vessel.VesselType) {
+    pipeline.sadd('discovered:vesselTypes', vessel.VesselType);
+  }
+  if (vessel.VesselClass) {
+    pipeline.sadd('discovered:vesselClasses', vessel.VesselClass);
+  }
+
+  // Track voyage statuses
+  if (vessel.VesselVoyageStatus) {
+    pipeline.sadd('discovered:voyageStatuses', vessel.VesselVoyageStatus);
+  }
+
+  await pipeline.exec();
+}
+
+// API endpoint to get discovered values
+// GET /api/discovered/:type
+// Returns: string[] of unique values
+```
+
+#### 21.10.3 Web UI Integration
+
+```typescript
+// apps/web/src/app/api/discovered/[type]/route.ts
+
+export async function GET(
+  request: Request,
+  { params }: { params: { type: string } }
+) {
+  const redis = getRedis();
+  const key = `discovered:${params.type}`;
+  const values = await redis.smembers(key);
+  return Response.json(values.sort());
+}
+```
+
+#### 21.10.4 UI Components
+
+- **Destination selector**: Autocomplete/dropdown populated from `discovered:destinations`
+- **Area filter**: Multi-select from `discovered:areas`
+- **Vessel type filter**: Checkbox group from `discovered:vesselTypes`
+- **Vessel class filter**: Checkbox group from `discovered:vesselClasses`
+
 ---
