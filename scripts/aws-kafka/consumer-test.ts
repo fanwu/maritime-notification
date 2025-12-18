@@ -13,14 +13,23 @@
  *   AWS_REGION - AWS region (default: us-east-1)
  */
 
-import { Kafka, logLevel } from 'kafkajs';
 import { generateAuthToken } from 'aws-msk-iam-sasl-signer-js';
 import { readFileSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { Kafka, logLevel } from 'kafkajs';
+import { createRequire } from 'module';
+
+const require = createRequire(import.meta.url);
+const { CompressionTypes, CompressionCodecs } = require('kafkajs');
+const SnappyCodec = require('kafkajs-snappy');
+
+// Register Snappy codec BEFORE creating Kafka client
+CompressionCodecs[CompressionTypes.Snappy] = SnappyCodec;
 
 const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+const __dirname = dirname(__filename); 
+
 
 // Load config from env file if it exists
 function loadConfig() {
