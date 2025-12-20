@@ -77,9 +77,26 @@ export async function publishNotification(clientId: string, notification: Notifi
 
 // Publish vessel update for real-time map
 export async function publishVesselUpdate(vessel: VesselState): Promise<void> {
+  // Only publish vessels with valid coordinates
+  if (
+    typeof vessel.Latitude !== 'number' ||
+    typeof vessel.Longitude !== 'number' ||
+    isNaN(vessel.Latitude) ||
+    isNaN(vessel.Longitude)
+  ) {
+    return;
+  }
+
   const pub = getPublisher();
   const message: VesselUpdateMessage = { vessel, timestamp: new Date().toISOString() };
   await pub.publish(config.redis.vesselUpdateChannel, JSON.stringify(message));
+}
+
+// Publish discovery stats update for real-time dashboard
+export async function publishDiscoveryStats(stats: Record<string, number>): Promise<void> {
+  const pub = getPublisher();
+  const message = { stats, timestamp: new Date().toISOString() };
+  await pub.publish(config.redis.discoveryStatsChannel, JSON.stringify(message));
 }
 
 // Cache vessel state in Redis
@@ -121,8 +138,23 @@ export async function cacheDestination(imo: number, destination: string): Promis
   await client.set(key, destination, 'EX', config.processing.vesselStateTtl);
 }
 
+// Check if vessel has valid coordinates
+function hasValidCoordinates(vessel: VesselState): boolean {
+  return (
+    typeof vessel.Latitude === 'number' &&
+    typeof vessel.Longitude === 'number' &&
+    !isNaN(vessel.Latitude) &&
+    !isNaN(vessel.Longitude)
+  );
+}
+
 // Cache vessel position in a single hash for efficient bulk retrieval
 export async function cacheVesselPosition(vessel: VesselState): Promise<void> {
+  // Only cache vessels with valid coordinates
+  if (!vessel.IMO || !hasValidCoordinates(vessel)) {
+    return;
+  }
+
   const client = getRedis();
   const data = JSON.stringify({
     IMO: vessel.IMO,

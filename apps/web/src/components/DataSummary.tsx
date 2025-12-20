@@ -1,12 +1,14 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import type { Socket } from 'socket.io-client';
 import {
   ChartBarIcon,
   MapPinIcon,
   TruckIcon,
   GlobeAltIcon,
   ArrowPathIcon,
+  SignalIcon,
 } from '@heroicons/react/24/outline';
 
 interface DiscoveryStats {
@@ -17,6 +19,10 @@ interface DiscoveryStats {
   vesselTypes: number;
   vesselClasses: number;
   voyageStatuses: number;
+}
+
+interface DataSummaryProps {
+  socket: Socket | null;
 }
 
 interface StatCardProps {
@@ -42,10 +48,11 @@ function StatCard({ label, value, icon, color }: StatCardProps) {
   );
 }
 
-export default function DataSummary() {
+export default function DataSummary({ socket }: DataSummaryProps) {
   const [stats, setStats] = useState<DiscoveryStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isLive, setIsLive] = useState(false);
 
   const fetchStats = async () => {
     try {
@@ -63,12 +70,29 @@ export default function DataSummary() {
     }
   };
 
+  // Initial fetch
   useEffect(() => {
     fetchStats();
-    // Refresh stats every 30 seconds
-    const interval = setInterval(fetchStats, 30000);
-    return () => clearInterval(interval);
   }, []);
+
+  // Listen to WebSocket for real-time updates
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleStats = (newStats: DiscoveryStats) => {
+      setStats(newStats);
+      setIsLive(true);
+      setLoading(false);
+      // Flash effect - reset after short delay
+      setTimeout(() => setIsLive(false), 500);
+    };
+
+    socket.on('discovery:stats', handleStats);
+
+    return () => {
+      socket.off('discovery:stats', handleStats);
+    };
+  }, [socket]);
 
   if (loading && !stats) {
     return (
@@ -98,6 +122,12 @@ export default function DataSummary() {
         <div className="flex items-center gap-2">
           <ChartBarIcon className="w-5 h-5 text-indigo-600" />
           <h2 className="text-base font-semibold text-gray-900">Data Summary</h2>
+          {socket && (
+            <span className={`flex items-center gap-1 text-xs ${isLive ? 'text-green-600' : 'text-gray-400'}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${isLive ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`} />
+              live
+            </span>
+          )}
         </div>
         <button
           onClick={fetchStats}

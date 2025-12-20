@@ -191,7 +191,7 @@ export default function Home() {
 
         {/* Data Summary */}
         <div className="p-4 border-b border-gray-200">
-          <DataSummary />
+          <DataSummary socket={socket} />
         </div>
 
         {/* Geofences */}

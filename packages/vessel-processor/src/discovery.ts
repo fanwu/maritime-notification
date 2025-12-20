@@ -1,6 +1,12 @@
 // Dynamic data discovery - tracks unique values from vessel messages
-import { getRedis } from './redis.js';
+import { getRedis, publishDiscoveryStats } from './redis.js';
 import type { VesselState } from './types.js';
+
+// Throttle stats publishing - publish every N messages or every M seconds
+let messageCount = 0;
+let lastPublishTime = 0;
+const PUBLISH_EVERY_N_MESSAGES = 50;
+const PUBLISH_EVERY_MS = 2000; // 2 seconds
 
 // Redis key prefixes for discovered values
 const KEYS = {
@@ -15,6 +21,18 @@ const KEYS = {
 };
 
 /**
+ * Check if vessel has valid coordinates
+ */
+function hasValidCoordinates(vessel: VesselState): boolean {
+  return (
+    typeof vessel.Latitude === 'number' &&
+    typeof vessel.Longitude === 'number' &&
+    !isNaN(vessel.Latitude) &&
+    !isNaN(vessel.Longitude)
+  );
+}
+
+/**
  * Track unique values from a vessel state message
  * Uses Redis Sets to efficiently store unique values
  */
@@ -22,8 +40,8 @@ export async function trackDiscoveredValues(vessel: VesselState): Promise<void> 
   const redis = getRedis();
   const pipeline = redis.pipeline();
 
-  // Track unique vessels by IMO
-  if (vessel.IMO) {
+  // Track unique vessels by IMO (only if they have valid coordinates)
+  if (vessel.IMO && hasValidCoordinates(vessel)) {
     pipeline.sadd(KEYS.vessels, String(vessel.IMO));
   }
 
@@ -56,6 +74,20 @@ export async function trackDiscoveredValues(vessel: VesselState): Promise<void> 
   }
 
   await pipeline.exec();
+
+  // Throttled publish of discovery stats
+  messageCount++;
+  const now = Date.now();
+  if (messageCount >= PUBLISH_EVERY_N_MESSAGES || now - lastPublishTime >= PUBLISH_EVERY_MS) {
+    messageCount = 0;
+    lastPublishTime = now;
+    // Get and publish stats asynchronously (don't await to avoid blocking)
+    getDiscoveryStats().then((stats) => {
+      publishDiscoveryStats(stats).catch((err) => {
+        console.error('Error publishing discovery stats:', err);
+      });
+    });
+  }
 }
 
 /**

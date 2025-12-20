@@ -44,8 +44,8 @@ async function startRedisSubscriber(io: SocketIOServer) {
     console.log('Redis subscriber connected');
   });
 
-  // Subscribe to notification channel
-  await subscriber.subscribe('notifications', 'vessel-updates');
+  // Subscribe to channels
+  await subscriber.subscribe('notifications', 'vessel-updates', 'discovery-stats');
 
   subscriber.on('message', (channel, message) => {
     try {
@@ -67,13 +67,18 @@ async function startRedisSubscriber(io: SocketIOServer) {
         if (Math.random() < 0.01) {
           console.log(`[Vessel] ${vessel.VesselName || vessel.IMO} -> ${io.engine.clientsCount} clients`);
         }
+      } else if (channel === 'discovery-stats') {
+        // Discovery stats from vessel-processor
+        // Format: { stats: Record<string, number>, timestamp: string }
+        const { stats } = data;
+        io.emit('discovery:stats', stats);
       }
     } catch (error) {
       console.error(`Error processing ${channel} message:`, error);
     }
   });
 
-  console.log('Subscribed to Redis channels: notifications, vessel-updates');
+  console.log('Subscribed to Redis channels: notifications, vessel-updates, discovery-stats');
 }
 
 app.prepare().then(async () => {

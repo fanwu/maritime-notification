@@ -126,14 +126,53 @@ AWS MSK (Kafka)
 
 | Key Pattern | Type | Description |
 |-------------|------|-------------|
+| `vessels:positions` | Hash | Cached vessel positions (IMO -> JSON) |
+| `discovered:vessels` | Set | Unique vessel IMOs |
 | `discovered:destinations` | Set | Unique AIS destinations |
 | `discovered:areas` | Set | Unique area names |
+| `discovered:areas:level1` | Set | Unique level 1 area names (regions) |
 | `discovered:vesselTypes` | Set | Unique vessel types |
 | `discovered:vesselClasses` | Set | Unique vessel classes |
+| `discovered:voyageStatuses` | Set | Unique voyage statuses |
 | `vessel:{imo}:geofence:{id}` | String | Geofence inside/outside state |
 | `vessel:{imo}:destination` | String | Last known destination |
 | `notifications` | Pub/Sub | Notification channel |
 | `vessel-updates` | Pub/Sub | Vessel update channel |
+| `discovery-stats` | Pub/Sub | Discovery stats update channel |
+
+## Resetting Redis Data
+
+To clear all cached vessel data and discovery stats (useful when data gets out of sync or you want to start fresh):
+
+```bash
+# Clear vessel positions cache
+docker exec redis redis-cli DEL vessels:positions
+
+# Clear all discovery sets
+docker exec redis redis-cli DEL \
+  discovered:vessels \
+  discovered:destinations \
+  discovered:areas \
+  discovered:areas:level1 \
+  discovered:vesselTypes \
+  discovered:vesselClasses \
+  discovered:voyageStatuses \
+  discovered:ports
+
+# Or clear everything at once
+docker exec redis redis-cli DEL \
+  vessels:positions \
+  discovered:vessels \
+  discovered:destinations \
+  discovered:areas \
+  discovered:areas:level1 \
+  discovered:vesselTypes \
+  discovered:vesselClasses \
+  discovered:voyageStatuses \
+  discovered:ports
+```
+
+After clearing, refresh the web UI. Both the vessel count and Data Summary stats will rebuild as new Kafka messages are processed.
 
 ## Development
 

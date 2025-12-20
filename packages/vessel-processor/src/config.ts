@@ -38,6 +38,7 @@ export const config = {
     // Channel names
     notificationChannel: 'notifications',
     vesselUpdateChannel: 'vessel-updates',
+    discoveryStatsChannel: 'discovery-stats',
   },
 
   // Processing settings
