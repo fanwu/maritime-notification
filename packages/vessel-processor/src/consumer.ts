@@ -77,16 +77,14 @@ export async function resetConsumerOffsets(): Promise<void> {
       // Handle various error cases
       const errorCode = error.groups?.[0]?.errorCode;
 
-      if (errorCode === 69) {
-        // GROUP_NOT_EMPTY - group has active members, use a new group ID
-        console.log('Consumer group has active members, using timestamp-based group ID');
-        config.kafka.groupId = `${config.kafka.groupId}-${Date.now()}`;
-        console.log(`New group ID: ${config.kafka.groupId}`);
-      } else if (error.type === 'GROUP_ID_NOT_FOUND' || errorCode === 36) {
+      if (error.type === 'GROUP_ID_NOT_FOUND' || errorCode === 36) {
         console.log('Consumer group does not exist, nothing to reset');
       } else {
-        console.warn('Could not delete consumer group:', error.message || error);
-        // Continue anyway - we'll use fromBeginning flag
+        // For any other error (GROUP_NOT_EMPTY, etc.), use a new group ID
+        console.log('Could not delete consumer group, using new group ID');
+        const baseGroupId = config.kafka.groupId.replace(/-\d+$/, ''); // Remove any existing timestamp
+        config.kafka.groupId = `${baseGroupId}-${Date.now()}`;
+        console.log(`New group ID: ${config.kafka.groupId}`);
       }
     }
 

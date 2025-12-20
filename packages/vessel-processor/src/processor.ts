@@ -20,6 +20,20 @@ let rulesCacheTime = 0;
 const RULES_CACHE_TTL = 60000; // 1 minute
 
 /**
+ * Check if vessel has valid coordinates for geofence evaluation
+ */
+function hasValidCoordinates(vessel: VesselState): boolean {
+  return (
+    typeof vessel.Latitude === 'number' &&
+    typeof vessel.Longitude === 'number' &&
+    !isNaN(vessel.Latitude) &&
+    !isNaN(vessel.Longitude) &&
+    isFinite(vessel.Latitude) &&
+    isFinite(vessel.Longitude)
+  );
+}
+
+/**
  * Get active rules (with caching)
  */
 async function getRules(): Promise<ClientRule[]> {
@@ -155,7 +169,8 @@ export async function processVesselState(vessel: VesselState): Promise<void> {
 
       switch (evaluator) {
         case 'geofence': {
-          if (!rule.geofence) {
+          // Skip if vessel or geofence doesn't have valid coordinates
+          if (!rule.geofence || !hasValidCoordinates(vessel)) {
             continue;
           }
           const condition = rule.condition as { triggerOn?: 'enter' | 'exit' | 'both' };

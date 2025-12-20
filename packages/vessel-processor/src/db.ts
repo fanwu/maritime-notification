@@ -5,6 +5,19 @@ import type { ClientRule, Geofence, NotificationType, Notification, RuleState } 
 
 const { Pool } = pg;
 
+// Helper to parse JSON fields that may already be parsed by pg driver
+function parseJson<T>(value: unknown, defaultValue: T): T {
+  if (value === null || value === undefined) return defaultValue;
+  if (typeof value === 'string') {
+    try {
+      return JSON.parse(value) as T;
+    } catch {
+      return defaultValue;
+    }
+  }
+  return value as T;
+}
+
 let pool: pg.Pool | null = null;
 
 export function getPool(): pg.Pool {
@@ -69,9 +82,9 @@ export async function getActiveRules(): Promise<ClientRule[]> {
     clientId: row.client_id,
     typeId: row.type_id,
     name: row.name,
-    condition: row.condition,
-    filters: row.filters || {},
-    settings: row.settings || {},
+    condition: parseJson(row.condition, {}),
+    filters: parseJson(row.filters, {}),
+    settings: parseJson(row.settings, {}),
     isActive: row.is_active,
     geofenceId: row.geofence_id,
     geofence: row.g_id ? {
@@ -79,7 +92,7 @@ export async function getActiveRules(): Promise<ClientRule[]> {
       clientId: row.g_client_id,
       name: row.g_name,
       geofenceType: row.geofence_type,
-      coordinates: row.coordinates,
+      coordinates: parseJson<[number, number][]>(row.coordinates, []),
       centerLat: row.center_lat,
       centerLng: row.center_lng,
       radiusKm: row.radius_km,
@@ -90,10 +103,10 @@ export async function getActiveRules(): Promise<ClientRule[]> {
       typeId: row.nt_type_id,
       name: row.nt_name,
       dataSource: row.data_source,
-      conditionSchema: row.condition_schema,
-      filterSchema: row.filter_schema || {},
-      defaultTemplate: row.default_template,
-      stateTracking: row.state_tracking || { enabled: false },
+      conditionSchema: parseJson(row.condition_schema, {}),
+      filterSchema: parseJson(row.filter_schema, {}),
+      defaultTemplate: parseJson(row.default_template, { title: '', message: '' }),
+      stateTracking: parseJson(row.state_tracking, { enabled: false }),
       isActive: true,
     },
   }));
@@ -158,7 +171,7 @@ export async function createNotification(notification: Omit<Notification, 'id' |
     typeId: row.typeId,
     title: row.title,
     message: row.message,
-    payload: typeof row.payload === 'string' ? JSON.parse(row.payload) : row.payload,
+    payload: parseJson(row.payload, {}),
     priority: row.priority,
     status: row.status,
     createdAt: row.createdAt.toISOString(),
@@ -182,7 +195,7 @@ export async function getActiveGeofences(): Promise<Geofence[]> {
     name: row.name,
     description: row.description,
     geofenceType: row.geofenceType,
-    coordinates: typeof row.coordinates === 'string' ? JSON.parse(row.coordinates) : row.coordinates,
+    coordinates: parseJson<[number, number][]>(row.coordinates, []),
     centerLat: row.centerLat,
     centerLng: row.centerLng,
     radiusKm: row.radiusKm,

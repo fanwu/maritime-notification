@@ -4,12 +4,40 @@ import * as turf from '@turf/turf';
 import type { VesselState, EvaluationResult, Geofence } from './types.js';
 
 /**
+ * Check if a coordinate is a valid number
+ */
+function isValidCoord(value: unknown): value is number {
+  return typeof value === 'number' && !isNaN(value) && isFinite(value);
+}
+
+/**
+ * Check if a point has valid coordinates
+ */
+function isValidPoint(point: [unknown, unknown]): point is [number, number] {
+  return isValidCoord(point[0]) && isValidCoord(point[1]);
+}
+
+/**
+ * Check if a polygon has valid coordinates (at least 4 points, all valid)
+ */
+function isValidPolygon(polygon: unknown[]): polygon is [number, number][] {
+  if (!Array.isArray(polygon) || polygon.length < 4) return false;
+  return polygon.every((coord) =>
+    Array.isArray(coord) && coord.length >= 2 && isValidPoint([coord[0], coord[1]])
+  );
+}
+
+/**
  * Check if a point is inside a polygon
  */
 export function isPointInPolygon(
   point: [number, number], // [lng, lat]
   polygon: [number, number][] // [[lng, lat], ...]
 ): boolean {
+  // Validate inputs
+  if (!isValidPoint(point) || !isValidPolygon(polygon)) {
+    return false;
+  }
   const turfPoint = turf.point(point);
   const turfPolygon = turf.polygon([polygon]);
   return turf.booleanPointInPolygon(turfPoint, turfPolygon);
@@ -23,6 +51,10 @@ export function isPointInCircle(
   center: [number, number], // [lng, lat]
   radiusKm: number
 ): boolean {
+  // Validate inputs
+  if (!isValidPoint(point) || !isValidPoint(center) || !isValidCoord(radiusKm)) {
+    return false;
+  }
   const from = turf.point(center);
   const to = turf.point(point);
   const distance = turf.distance(from, to, { units: 'kilometers' });
@@ -33,6 +65,11 @@ export function isPointInCircle(
  * Check if vessel is inside a geofence
  */
 export function isVesselInGeofence(vessel: VesselState, geofence: Geofence): boolean {
+  // Validate vessel coordinates first
+  if (!isValidCoord(vessel.Longitude) || !isValidCoord(vessel.Latitude)) {
+    return false;
+  }
+
   const point: [number, number] = [vessel.Longitude, vessel.Latitude];
 
   if (geofence.geofenceType === 'circle' && geofence.centerLng && geofence.centerLat && geofence.radiusKm) {

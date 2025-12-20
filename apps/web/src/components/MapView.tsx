@@ -103,7 +103,6 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView({ vesse
   // Also notify parent via callback
   useEffect(() => {
     if (onMapReady) {
-      console.log('[MapView] Calling onMapReady');
       onMapReady(handleRef.current);
     }
   }, [onMapReady]);
@@ -321,8 +320,6 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView({ vesse
     const source = map.current.getSource('geofences') as mapboxgl.GeoJSONSource;
     if (!source) return;
 
-    console.log('Rendering geofences on map:', geofences.length);
-
     source.setData({
       type: 'FeatureCollection',
       features: geofences.map((g) => ({
@@ -338,18 +335,10 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView({ vesse
 
   // Update vessels GeoJSON source (fast WebGL rendering with clustering)
   useEffect(() => {
-    if (!mapLoaded || !map.current) {
-      console.log('[MapView] Skipping vessel update - map not ready');
-      return;
-    }
+    if (!mapLoaded || !map.current) return;
 
     const source = map.current.getSource('vessels') as mapboxgl.GeoJSONSource;
-    if (!source) {
-      console.log('[MapView] Vessels source not found');
-      return;
-    }
-
-    console.log(`[MapView] Updating ${vessels.length} vessels on map`);
+    if (!source) return;
 
     // Convert vessels to GeoJSON features
     const features = vessels
@@ -382,8 +371,6 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView({ vesse
       type: 'FeatureCollection',
       features,
     });
-
-    console.log(`[MapView] Rendered ${features.length} valid vessels`);
   }, [vessels, mapLoaded]);
 
   const handleSaveGeofence = useCallback(() => {
