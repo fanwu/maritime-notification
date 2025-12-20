@@ -29,7 +29,6 @@ const MapView = dynamic(() => import('@/components/MapView'), {
 const CLIENT_ID = 'demo-client';
 
 export default function Home() {
-  const mapRef = useRef<MapViewHandle>(null);
   const mapHandleRef = useRef<MapViewHandle | null>(null);
   const [socket, setSocket] = useState<Socket | null>(null);
   const [vessels, setVessels] = useState<Map<number, VesselState>>(new Map());
@@ -237,7 +236,6 @@ export default function Home() {
       {/* Map */}
       <div className="flex-1 relative">
         <MapView
-          ref={mapRef}
           vessels={Array.from(vessels.values())}
           geofences={geofences}
           onGeofenceCreate={handleGeofenceCreate}
