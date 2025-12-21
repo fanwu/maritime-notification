@@ -48,7 +48,15 @@ aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS 
 # Step 2: Build and push images
 deploy_web() {
     log "Building web application..."
-    docker build -t ${WEB_IMAGE} -f apps/web/Dockerfile .
+
+    # Load NEXT_PUBLIC_* variables from .env file for build-time
+    if [ -f .env ]; then
+        export $(grep "^NEXT_PUBLIC_" .env | xargs)
+    fi
+
+    docker build \
+        --build-arg NEXT_PUBLIC_MAPBOX_TOKEN="${NEXT_PUBLIC_MAPBOX_TOKEN}" \
+        -t ${WEB_IMAGE} -f apps/web/Dockerfile .
 
     log "Tagging web image..."
     docker tag ${WEB_IMAGE}:latest ${ECR_REGISTRY}/${WEB_IMAGE}:latest

@@ -1,10 +1,8 @@
 import { NextResponse } from 'next/server';
 import Redis from 'ioredis';
 
-// Redis configuration
-const REDIS_HOST = process.env.REDIS_HOST || 'localhost';
-const REDIS_PORT = parseInt(process.env.REDIS_PORT || '6379', 10);
-const REDIS_PASSWORD = process.env.REDIS_PASSWORD || undefined;
+// Force dynamic rendering - prevents Next.js from caching/inlining env vars at build time
+export const dynamic = 'force-dynamic';
 
 // Discovery types and their Redis keys
 const DISCOVERY_KEYS: Record<string, string> = {
@@ -17,15 +15,31 @@ const DISCOVERY_KEYS: Record<string, string> = {
   voyageStatuses: 'discovered:voyageStatuses',
 };
 
-// Create Redis client
+// Create Redis client - read env vars at runtime, not build time
 let redis: Redis | null = null;
+let cachedRedisHost: string | null = null;
 
 function getRedis(): Redis {
+  // Read env vars at runtime using indirect access to prevent Next.js static analysis
+  const envVars = process.env;
+  const redisHost = envVars['REDIS_HOST'] || 'localhost';
+  const redisPort = parseInt(envVars['REDIS_PORT'] || '6379', 10);
+  const redisPassword = envVars['REDIS_PASSWORD'] || undefined;
+
+  // Recreate connection if host changed (shouldn't happen, but just in case)
+  if (redis && cachedRedisHost !== redisHost) {
+    redis.disconnect();
+    redis = null;
+  }
+
   if (!redis) {
+    cachedRedisHost = redisHost;
     redis = new Redis({
-      host: REDIS_HOST,
-      port: REDIS_PORT,
-      password: REDIS_PASSWORD,
+      host: redisHost,
+      port: redisPort,
+      password: redisPassword,
+      lazyConnect: false,
+      retryStrategy: (times) => Math.min(times * 50, 2000),
     });
   }
   return redis;
@@ -47,6 +61,8 @@ export async function GET() {
     }
 
     const results = await pipeline.exec();
+    console.log('[discovered] Pipeline results:', JSON.stringify(results));
+
     const stats: Record<string, number> = {};
 
     const types = Object.keys(DISCOVERY_KEYS);
@@ -56,9 +72,18 @@ export async function GET() {
       }
     });
 
+    const envVars = process.env;
     return NextResponse.json({
       stats,
       types: Object.keys(DISCOVERY_KEYS),
+      debug: {
+        redisHostRaw: envVars['REDIS_HOST'],
+        redisHostType: typeof envVars['REDIS_HOST'],
+        redisHost: envVars['REDIS_HOST'] || 'localhost',
+        allEnvKeys: Object.keys(envVars).filter(k => k.includes('REDIS') || k.includes('redis')),
+        resultsCount: results?.length ?? 0,
+        rawResults: results,
+      }
     });
   } catch (error) {
     console.error('Error fetching discovery stats:', error);
