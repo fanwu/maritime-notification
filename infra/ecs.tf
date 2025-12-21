@@ -220,11 +220,12 @@ resource "aws_ecs_task_definition" "processor" {
 # ============================================
 
 resource "aws_ecs_service" "web" {
-  name            = "${var.project_name}-web"
-  cluster         = aws_ecs_cluster.main.id
-  task_definition = aws_ecs_task_definition.web.arn
-  desired_count   = var.web_desired_count
-  launch_type     = "FARGATE"
+  name                   = "${var.project_name}-web"
+  cluster                = aws_ecs_cluster.main.id
+  task_definition        = aws_ecs_task_definition.web.arn
+  desired_count          = var.web_desired_count
+  launch_type            = "FARGATE"
+  enable_execute_command = true
 
   network_configuration {
     subnets          = data.aws_subnets.private.ids
@@ -263,11 +264,12 @@ resource "aws_ecs_service" "web" {
 # ============================================
 
 resource "aws_ecs_service" "processor" {
-  name            = "${var.project_name}-processor"
-  cluster         = aws_ecs_cluster.main.id
-  task_definition = aws_ecs_task_definition.processor.arn
-  desired_count   = var.processor_desired_count
-  launch_type     = "FARGATE"
+  name                   = "${var.project_name}-processor"
+  cluster                = aws_ecs_cluster.main.id
+  task_definition        = aws_ecs_task_definition.processor.arn
+  desired_count          = var.processor_desired_count
+  launch_type            = "FARGATE"
+  enable_execute_command = true
 
   network_configuration {
     subnets          = data.aws_subnets.private.ids

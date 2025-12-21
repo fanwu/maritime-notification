@@ -28,8 +28,11 @@ export const config = {
     password: process.env.POSTGRES_PASSWORD || 'notification',
     // Connection pool settings
     maxConnections: parseInt(process.env.POSTGRES_MAX_CONNECTIONS || '10', 10),
-    // SSL - required for AWS RDS
-    ssl: process.env.POSTGRES_SSL !== 'false',
+    // SSL - auto-detect: disabled for localhost, enabled for remote (AWS RDS)
+    // Can be overridden with POSTGRES_SSL=true or POSTGRES_SSL=false
+    ssl: process.env.POSTGRES_SSL === 'true' ? true
+      : process.env.POSTGRES_SSL === 'false' ? false
+      : (process.env.POSTGRES_HOST || 'localhost') !== 'localhost',
   },
 
   // Redis configuration
@@ -66,7 +69,7 @@ export function printConfig(): void {
   console.log(`Kafka Topic: ${config.kafka.topic}`);
   console.log(`Kafka Group ID: ${config.kafka.groupId}`);
   console.log(`MSK IAM Auth: ${config.kafka.useMskIam}`);
-  console.log(`PostgreSQL: ${config.postgres.host}:${config.postgres.port}/${config.postgres.database}`);
+  console.log(`PostgreSQL: ${config.postgres.host}:${config.postgres.port}/${config.postgres.database} (SSL: ${config.postgres.ssl})`);
   console.log(`Redis: ${config.redis.host}:${config.redis.port}`);
   console.log('');
 }

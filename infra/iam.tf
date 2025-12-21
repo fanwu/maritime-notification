@@ -89,6 +89,17 @@ resource "aws_iam_role_policy" "ecs_task_web" {
           "logs:PutLogEvents"
         ]
         Resource = "${aws_cloudwatch_log_group.web.arn}:*"
+      },
+      {
+        # Required for ECS Exec
+        Effect = "Allow"
+        Action = [
+          "ssmmessages:CreateControlChannel",
+          "ssmmessages:CreateDataChannel",
+          "ssmmessages:OpenControlChannel",
+          "ssmmessages:OpenDataChannel"
+        ]
+        Resource = "*"
       }
     ]
   })
@@ -139,6 +150,17 @@ resource "aws_iam_role_policy" "ecs_task_processor" {
             "cloudwatch:namespace" = "Maritime/Kafka"
           }
         }
+      },
+      {
+        # Required for ECS Exec
+        Effect = "Allow"
+        Action = [
+          "ssmmessages:CreateControlChannel",
+          "ssmmessages:CreateDataChannel",
+          "ssmmessages:OpenControlChannel",
+          "ssmmessages:OpenDataChannel"
+        ]
+        Resource = "*"
       }
     ]
   })
