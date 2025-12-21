@@ -98,7 +98,7 @@ resource "aws_ecs_task_definition" "web" {
       }
 
       healthCheck = {
-        command     = ["CMD-SHELL", "curl -f http://localhost:3000/api/health || exit 1"]
+        command     = ["CMD-SHELL", "wget -q --spider http://localhost:3000/api/health || exit 1"]
         interval    = 30
         timeout     = 5
         retries     = 3
@@ -148,10 +148,10 @@ resource "aws_ecs_task_definition" "processor" {
         },
         {
           name  = "KAFKA_TOPIC"
-          value = "vessel-positions"
+          value = "vessel.state.changed"
         },
         {
-          name  = "KAFKA_CONSUMER_GROUP"
+          name  = "KAFKA_GROUP_ID"
           value = "notification-processor"
         },
         {
@@ -169,13 +169,33 @@ resource "aws_ecs_task_definition" "processor" {
         {
           name  = "CLOUDWATCH_METRICS_ENABLED"
           value = "true"
+        },
+        {
+          name  = "POSTGRES_HOST"
+          value = aws_db_instance.main.address
+        },
+        {
+          name  = "POSTGRES_PORT"
+          value = "5432"
+        },
+        {
+          name  = "POSTGRES_DB"
+          value = aws_db_instance.main.db_name
+        },
+        {
+          name  = "POSTGRES_USER"
+          value = aws_db_instance.main.username
         }
       ]
 
       secrets = [
         {
-          name      = "DATABASE_URL"
-          valueFrom = "${aws_secretsmanager_secret.db_url.arn}"
+          name      = "POSTGRES_PASSWORD"
+          valueFrom = aws_secretsmanager_secret.db_password.arn
+        },
+        {
+          name      = "KAFKA_RESET"
+          valueFrom = aws_ssm_parameter.kafka_reset.arn
         }
       ]
 
@@ -286,5 +306,5 @@ resource "aws_secretsmanager_secret" "db_url" {
 
 resource "aws_secretsmanager_secret_version" "db_url" {
   secret_id = aws_secretsmanager_secret.db_url.id
-  secret_string = "postgresql://${aws_db_instance.main.username}:${var.db_password}@${aws_db_instance.main.endpoint}/${aws_db_instance.main.db_name}"
+  secret_string = "postgresql://${aws_db_instance.main.username}:${var.db_password}@${aws_db_instance.main.endpoint}/${aws_db_instance.main.db_name}?sslmode=require"
 }

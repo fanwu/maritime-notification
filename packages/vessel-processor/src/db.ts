@@ -29,6 +29,7 @@ export function getPool(): pg.Pool {
       user: config.postgres.user,
       password: config.postgres.password,
       max: config.postgres.maxConnections,
+      ssl: config.postgres.ssl ? { rejectUnauthorized: false } : false,
     });
 
     pool.on('error', (err) => {

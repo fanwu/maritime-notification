@@ -38,7 +38,18 @@ resource "aws_iam_role_policy" "ecs_execution_secrets" {
         ]
         Resource = [
           aws_secretsmanager_secret.db_password.arn,
-          aws_secretsmanager_secret.mapbox_token.arn
+          aws_secretsmanager_secret.mapbox_token.arn,
+          aws_secretsmanager_secret.db_url.arn
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ssm:GetParameters",
+          "ssm:GetParameter"
+        ]
+        Resource = [
+          aws_ssm_parameter.kafka_reset.arn
         ]
       }
     ]

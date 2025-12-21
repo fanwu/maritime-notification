@@ -29,3 +29,18 @@ resource "aws_secretsmanager_secret_version" "mapbox_token" {
   secret_id     = aws_secretsmanager_secret.mapbox_token.id
   secret_string = var.mapbox_token
 }
+
+# ============================================
+# SSM Parameters for Processor Configuration
+# ============================================
+
+resource "aws_ssm_parameter" "kafka_reset" {
+  name        = "/${var.project_name}/processor/kafka-reset"
+  description = "Reset consumer offsets and start from beginning (true/false)"
+  type        = "String"
+  value       = "false"
+
+  tags = {
+    Name = "${var.project_name}-kafka-reset"
+  }
+}

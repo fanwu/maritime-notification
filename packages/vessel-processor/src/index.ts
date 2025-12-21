@@ -13,10 +13,10 @@ import { connectRedis, closeRedis, getRedis } from './redis.js';
 import { startConsumer, stopConsumer, getConsumerStatus, resetConsumerOffsets, getTopicInfo, resetMessageCount } from './consumer.js';
 import { getDiscoveryStats, clearDiscoveredValues } from './discovery.js';
 
-// Parse command line arguments
+// Parse command line arguments and environment variables
 const args = process.argv.slice(2);
-const resetMode = args.includes('--reset') || args.includes('-r');
-const fromBeginning = args.includes('--from-beginning') || args.includes('-b') || resetMode;
+const resetMode = args.includes('--reset') || args.includes('-r') || process.env.KAFKA_RESET === 'true';
+const fromBeginning = args.includes('--from-beginning') || args.includes('-b') || resetMode || process.env.KAFKA_FROM_BEGINNING === 'true';
 const infoOnly = args.includes('--info') || args.includes('-i');
 
 /**

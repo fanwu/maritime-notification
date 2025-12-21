@@ -28,6 +28,8 @@ export const config = {
     password: process.env.POSTGRES_PASSWORD || 'notification',
     // Connection pool settings
     maxConnections: parseInt(process.env.POSTGRES_MAX_CONNECTIONS || '10', 10),
+    // SSL - required for AWS RDS
+    ssl: process.env.POSTGRES_SSL !== 'false',
   },
 
   // Redis configuration
