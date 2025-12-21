@@ -241,8 +241,8 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView({ vesse
             'match',
             ['get', 'vesselType'],
             'Tanker', '#ef4444',
-            'Cargo', '#3b82f6',
-            'Container', '#22c55e',
+            'Bulk Carrier', '#3b82f6',
+            'Container Ship', '#22c55e',
             '#6b7280'
           ],
           'circle-radius': 6,
@@ -407,31 +407,10 @@ const MapView = forwardRef<MapViewHandle, MapViewProps>(function MapView({ vesse
     <>
       <div ref={mapContainer} className="w-full h-full" />
 
-      {/* Legend */}
-      <div className="absolute bottom-4 left-4 bg-white p-3 rounded-lg shadow-lg">
-        <h4 className="text-sm font-semibold mb-2">Vessel Types</h4>
-        <div className="space-y-1">
-          {[
-            { type: 'Tanker', color: '#ef4444' },
-            { type: 'Dry', color: '#f59e0b' },
-            { type: 'Container', color: '#3b82f6' },
-            { type: 'LNG', color: '#10b981' },
-            { type: 'LPG', color: '#8b5cf6' },
-          ].map(({ type, color }) => (
-            <div key={type} className="flex items-center text-xs">
-              <span
-                className="w-3 h-3 rounded-full mr-2"
-                style={{ backgroundColor: color }}
-              />
-              {type}
-            </div>
-          ))}
-        </div>
-      </div>
 
-      {/* Drawing instructions */}
-      <div className="absolute top-4 left-14 bg-white px-3 py-2 rounded-lg shadow text-sm">
-        Draw a polygon to create a geofence
+      {/* Map title */}
+      <div className="absolute top-4 left-14 bg-white px-3 py-2 rounded-lg shadow text-sm font-medium text-gray-700">
+        Live Vessel Map
       </div>
 
       {/* Name modal */}

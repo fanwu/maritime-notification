@@ -178,13 +178,9 @@ export default function Home() {
         {/* Header */}
         <div className="p-4 border-b border-gray-200">
           <h1 className="text-lg font-semibold text-gray-900">Maritime Notifications</h1>
-          <div className="flex items-center gap-3 mt-2 text-sm">
-            <div className="flex items-center gap-1.5">
-              <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-red-500'}`} />
-              <span className="text-gray-600">{isConnected ? 'Connected' : 'Disconnected'}</span>
-            </div>
-            <span className="text-gray-300">|</span>
-            <span className="text-gray-600">{vessels.size} live</span>
+          <div className="flex items-center gap-1.5 mt-2 text-sm">
+            <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-red-500'}`} />
+            <span className="text-gray-600">{isConnected ? 'Connected' : 'Disconnected'}</span>
           </div>
         </div>
 
