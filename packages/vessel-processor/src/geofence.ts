@@ -194,15 +194,25 @@ export function evaluateChange(
     };
   }
 
+  // Skip if either value is empty (avoid notifications for "" -> "something")
+  const prevStr = String(previousValue).trim();
+  const currStr = String(currentValue ?? '').trim();
+  if (!prevStr || !currStr) {
+    return {
+      triggered: false,
+      context: { currentValue, previousValue, reason: 'empty_value' },
+    };
+  }
+
   // Check from/to filters if specified
   let triggered = true;
 
   if (condition.from && condition.from.length > 0) {
-    triggered = triggered && condition.from.includes(String(previousValue));
+    triggered = triggered && condition.from.includes(prevStr);
   }
 
   if (condition.to && condition.to.length > 0) {
-    triggered = triggered && condition.to.includes(String(currentValue));
+    triggered = triggered && condition.to.includes(currStr);
   }
 
   return {
@@ -210,8 +220,8 @@ export function evaluateChange(
     transition: 'change',
     context: {
       field: condition.field,
-      previousValue,
-      currentValue,
+      previousValue: prevStr,
+      currentValue: currStr,
     },
   };
 }

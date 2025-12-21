@@ -46,7 +46,7 @@ export default function Home() {
       .then((data) => setGeofences(data))
       .catch(console.error);
 
-    fetch(`/api/notifications?clientId=${CLIENT_ID}`)
+    fetch(`/api/notifications?clientId=${CLIENT_ID}&limit=500`)
       .then((res) => res.json())
       .then((data) => {
         setNotifications(data);
