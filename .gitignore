@@ -21,6 +21,10 @@ out
 .vscode
 *.swp
 *.swo
+.claude
+
+# TypeScript build cache
+*.tsbuildinfo
 
 # OS
 .DS_Store
@@ -35,3 +39,21 @@ coverage
 
 # Misc
 .turbo
+
+# AWS Kafka scripts
+scripts/aws-kafka/node_modules
+scripts/aws-kafka/package-lock.json
+scripts/aws-kafka/kafka_2.13-*
+scripts/aws-kafka/aws-msk-iam-auth-*.jar
+scripts/aws-kafka/client.properties
+scripts/aws-kafka/msk-config-*.env
+scripts/aws-kafka/*.tgz
+
+# Terraform
+infra/.terraform/
+infra/*.tfstate
+infra/*.tfstate.backup
+infra/terraform.tfvars
+infra/*.tfplan
+infra/.terraform.lock.hcl
+tfplan

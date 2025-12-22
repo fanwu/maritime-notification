@@ -1,0 +1,104 @@
+# Maritime Notification Infrastructure - Terraform Variables
+# Copy this file to terraform.tfvars and fill in your values
+# terraform.tfvars is gitignored and should never be committed
+
+# ============================================
+# Required Variables (must be set)
+# ============================================
+
+# PostgreSQL database password
+# Use a strong password with at least 16 characters
+db_password = "your-secure-database-password"
+
+# Mapbox API token for map display
+# Get one from https://account.mapbox.com/access-tokens/
+mapbox_token = "pk.your-mapbox-public-token"
+
+# ============================================
+# Optional Variables (have sensible defaults)
+# ============================================
+
+# AWS Region
+# aws_region = "us-east-1"
+
+# Environment name
+# environment = "production"
+
+# Project name (used for resource naming)
+# project_name = "maritime-notification"
+
+# ============================================
+# MSK Configuration
+# ============================================
+
+# MSK bootstrap servers (from existing MSK cluster)
+# msk_bootstrap_servers = "b-2.maritimekafka.wgye9s.c5.kafka.us-east-1.amazonaws.com:9098,b-1.maritimekafka.wgye9s.c5.kafka.us-east-1.amazonaws.com:9098,b-3.maritimekafka.wgye9s.c5.kafka.us-east-1.amazonaws.com:9098"
+
+# Kafka topic for vessel state changes
+# kafka_topic = "vessel.state.changed"
+
+# ============================================
+# Database Configuration (Start Small)
+# ============================================
+
+# RDS instance class
+# db.t3.micro: 2 vCPU, 1 GB RAM (~$15/mo) - good for development/POC
+# db.t3.small: 2 vCPU, 2 GB RAM (~$30/mo) - better for production
+# db.t3.medium: 2 vCPU, 4 GB RAM (~$60/mo) - high load
+# db_instance_class = "db.t3.micro"
+
+# Allocated storage in GB (min 20 GB for gp3)
+# db_allocated_storage = 20
+
+# ============================================
+# Redis Configuration (Start Small)
+# ============================================
+
+# ElastiCache node type
+# cache.t3.micro: 2 vCPU, 0.5 GB RAM (~$12/mo) - good for development/POC
+# cache.t3.small: 2 vCPU, 1.37 GB RAM (~$24/mo) - better for production
+# cache.t3.medium: 2 vCPU, 3.09 GB RAM (~$48/mo) - high load
+# redis_node_type = "cache.t3.micro"
+
+# ============================================
+# ECS Web Service Configuration
+# ============================================
+
+# CPU units (256 = 0.25 vCPU, 512 = 0.5 vCPU, 1024 = 1 vCPU)
+# web_cpu = 256
+
+# Memory in MB (must be compatible with CPU)
+# 256 CPU: 512, 1024, 2048
+# 512 CPU: 1024, 2048, 3072, 4096
+# 1024 CPU: 2048, 3072, 4096, 5120, 6144, 7168, 8192
+# web_memory = 512
+
+# Number of web tasks
+# web_desired_count = 2
+# web_min_count = 2
+# web_max_count = 4
+
+# ============================================
+# ECS Processor Service Configuration
+# ============================================
+
+# CPU units for processor (Kafka consumer needs more resources)
+# processor_cpu = 512
+
+# Memory in MB
+# processor_memory = 1024
+
+# Number of processor tasks
+# processor_desired_count = 1
+# processor_min_count = 1
+# processor_max_count = 3
+
+# ============================================
+# VPC Configuration (Existing MSK VPC)
+# ============================================
+
+# Name of existing VPC (created by MSK setup script)
+# vpc_name = "maritime-kafka-vpc"
+
+# Name of existing MSK security group
+# msk_security_group_name = "maritime-kafka-sg"

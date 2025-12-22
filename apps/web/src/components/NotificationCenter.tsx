@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
 import {
   XMarkIcon,
   TrashIcon,
@@ -9,6 +9,7 @@ import {
   ArrowPathIcon,
   BellIcon,
   ArrowsRightLeftIcon,
+  MagnifyingGlassIcon,
 } from '@heroicons/react/24/outline';
 import type { Notification } from '@/types';
 
@@ -30,6 +31,35 @@ export default function NotificationCenter({
   const markedAsReadRef = useRef<Set<string>>(new Set());
   const initialNotificationIdsRef = useRef<Set<string>>(new Set());
   const isInitializedRef = useRef(false);
+  const [searchTerm, setSearchTerm] = useState('');
+
+  // Filter notifications by search term (matches source, destination, vessel name, title, message)
+  const filteredNotifications = useMemo(() => {
+    if (!searchTerm.trim()) {
+      return notifications;
+    }
+    const search = searchTerm.toLowerCase();
+    return notifications.filter((n) => {
+      // Check title and message
+      if (n.title.toLowerCase().includes(search)) return true;
+      if (n.message.toLowerCase().includes(search)) return true;
+
+      // Check payload fields for destination changes
+      if (n.payload) {
+        const prev = String(n.payload.previousValue || '').toLowerCase();
+        const curr = String(n.payload.currentValue || '').toLowerCase();
+        const vessel = String(n.payload.vesselName || '').toLowerCase();
+        const dest = String(n.payload.destination || '').toLowerCase();
+
+        if (prev.includes(search)) return true;
+        if (curr.includes(search)) return true;
+        if (vessel.includes(search)) return true;
+        if (dest.includes(search)) return true;
+      }
+
+      return false;
+    });
+  }, [notifications, searchTerm]);
 
   // Mark all unread notifications as read when panel opens
   useEffect(() => {
@@ -143,25 +173,52 @@ export default function NotificationCenter({
   return (
     <div className="h-full flex flex-col bg-white">
       {/* Header */}
-      <div className="px-4 py-3 border-b border-gray-200 flex items-center justify-between bg-gray-50">
-        <h2 className="text-base font-semibold text-gray-900">Notifications</h2>
-        <div className="flex items-center gap-1">
-          {notifications.length > 0 && (
+      <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
+        <div className="flex items-center justify-between mb-2">
+          <h2 className="text-base font-semibold text-gray-900">Notifications</h2>
+          <div className="flex items-center gap-1">
+            {notifications.length > 0 && (
+              <button
+                onClick={onClearAll}
+                className="flex items-center gap-1 text-xs text-gray-500 hover:text-red-600 px-2 py-1.5 hover:bg-red-50 rounded-md transition-colors"
+              >
+                <TrashIcon className="w-3.5 h-3.5" />
+                <span>Clear All</span>
+              </button>
+            )}
             <button
-              onClick={onClearAll}
-              className="flex items-center gap-1 text-xs text-gray-500 hover:text-red-600 px-2 py-1.5 hover:bg-red-50 rounded-md transition-colors"
+              onClick={onClose}
+              className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-md transition-colors"
             >
-              <TrashIcon className="w-3.5 h-3.5" />
-              <span>Clear All</span>
+              <XMarkIcon className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Search box */}
+        <div className="relative">
+          <MagnifyingGlassIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Filter by port name..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white"
+          />
+          {searchTerm && (
+            <button
+              onClick={() => setSearchTerm('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            >
+              <XMarkIcon className="w-4 h-4" />
             </button>
           )}
-          <button
-            onClick={onClose}
-            className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-md transition-colors"
-          >
-            <XMarkIcon className="w-5 h-5" />
-          </button>
         </div>
+        {searchTerm && (
+          <p className="text-xs text-gray-500 mt-1">
+            Showing {filteredNotifications.length} of {notifications.length}
+          </p>
+        )}
       </div>
 
       {/* Notification List */}
@@ -171,9 +228,14 @@ export default function NotificationCenter({
             <BellIcon className="w-12 h-12 mb-3 stroke-1" />
             <p className="text-sm">No notifications</p>
           </div>
+        ) : filteredNotifications.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12 text-gray-400">
+            <MagnifyingGlassIcon className="w-12 h-12 mb-3 stroke-1" />
+            <p className="text-sm">No matches for "{searchTerm}"</p>
+          </div>
         ) : (
           <div className="divide-y divide-gray-100">
-            {notifications.map((notification) => {
+            {filteredNotifications.map((notification) => {
               const config = getTypeConfig(notification.typeId);
               const IconComponent = config.icon;
 

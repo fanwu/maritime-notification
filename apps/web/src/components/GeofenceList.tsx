@@ -32,6 +32,10 @@ function countVesselsInGeofence(geofence: Geofence, vessels: VesselState[]): num
   const polygon = turf.polygon([coords]);
 
   return vessels.filter((vessel) => {
+    // Skip vessels with invalid coordinates
+    if (typeof vessel.Longitude !== 'number' || typeof vessel.Latitude !== 'number') {
+      return false;
+    }
     const point = turf.point([vessel.Longitude, vessel.Latitude]);
     return turf.booleanPointInPolygon(point, polygon);
   }).length;

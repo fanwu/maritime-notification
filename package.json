@@ -8,8 +8,13 @@
     "start": "pnpm --filter web start",
     "mock:start": "pnpm --filter mock-producer start",
     "mock:dev": "pnpm --filter mock-producer dev",
+    "dev:processor": "pnpm --filter vessel-processor dev",
+    "dev:processor:reset": "pnpm --filter vessel-processor dev -- --reset",
+    "build:processor": "pnpm --filter vessel-processor build",
     "db:push": "pnpm --filter web db:push",
     "db:studio": "pnpm --filter web db:studio",
+    "db:seed": "pnpm --filter web exec prisma db seed",
+    "redis:clear": "docker exec redis redis-cli FLUSHDB",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",
     "docker:logs": "docker compose logs -f"

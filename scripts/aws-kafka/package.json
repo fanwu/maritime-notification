@@ -1,0 +1,22 @@
+{
+  "name": "msk-test-scripts",
+  "version": "1.0.0",
+  "description": "Test scripts for AWS MSK Kafka",
+  "type": "module",
+  "scripts": {
+    "producer": "npx tsx producer-test.ts",
+    "consumer": "npx tsx consumer-test.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-sts": "^3.470.0",
+    "@aws-sdk/credential-providers": "^3.470.0",
+    "aws-msk-iam-sasl-signer-js": "^1.0.0",
+    "kafkajs": "^2.2.4",
+    "kafkajs-snappy": "^1.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "tsx": "^4.6.2",
+    "typescript": "^5.3.2"
+  }
+}

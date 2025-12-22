@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   XMarkIcon,
   MapPinIcon,
   ArrowsRightLeftIcon,
   CheckIcon,
   InformationCircleIcon,
+  MagnifyingGlassIcon,
 } from '@heroicons/react/24/outline';
 
 interface DestinationPreferences {
@@ -30,12 +31,6 @@ interface NotificationSettingsProps {
   onClose: () => void;
   onSave: () => void;
 }
-
-const AVAILABLE_DESTINATIONS = [
-  'SINGAPORE', 'ROTTERDAM', 'HONG KONG', 'SHANGHAI', 'DUBAI',
-  'HOUSTON', 'TOKYO', 'BUSAN', 'FUJAIRAH', 'SANTOS', 'LOS ANGELES',
-  'NEW YORK', 'LONDON', 'MUMBAI', 'SYDNEY',
-];
 
 // Reusable Toggle Switch component
 function Toggle({ enabled, onChange }: { enabled: boolean; onChange: (v: boolean) => void }) {
@@ -88,6 +83,150 @@ function Chip({
   );
 }
 
+// Destination selector with server-side search
+function DestinationSelector({
+  label,
+  color,
+  selected,
+  onToggle,
+  onAddMultiple,
+}: {
+  label: string;
+  color: 'blue' | 'green';
+  selected: string[];
+  onToggle: (dest: string) => void;
+  onAddMultiple: (dests: string[]) => void;
+}) {
+  const [search, setSearch] = useState('');
+  const [results, setResults] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  // Fetch destinations from API when search changes
+  useEffect(() => {
+    const fetchDestinations = async () => {
+      setLoading(true);
+      try {
+        const params = new URLSearchParams({ limit: '100' });
+        if (search.trim()) {
+          params.set('search', search.trim());
+        }
+        const res = await fetch(`/api/discovered/destinations?${params}`);
+        if (res.ok) {
+          const data = await res.json();
+          setResults(data.values || []);
+        }
+      } catch (error) {
+        console.error('Failed to fetch destinations:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    const debounce = setTimeout(fetchDestinations, 200);
+    return () => clearTimeout(debounce);
+  }, [search]);
+
+  const borderColor = color === 'blue' ? 'border-blue-200' : 'border-emerald-200';
+  const bgColor = color === 'blue' ? 'bg-blue-50' : 'bg-emerald-50';
+  const btnColor = color === 'blue' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-emerald-600 hover:bg-emerald-700';
+
+  // Count how many results are not yet selected
+  const unselectedResults = results.filter((r) => !selected.includes(r));
+
+  const handleAddAll = () => {
+    onAddMultiple(unselectedResults);
+    setSearch(''); // Clear search after adding
+  };
+
+  return (
+    <div className={`p-3 rounded-lg border ${borderColor} ${bgColor}`}>
+      <div className="flex items-center justify-between mb-2">
+        <label className="text-sm font-medium text-gray-700">
+          {label}
+          <span className="font-normal text-gray-400 ml-1">(empty = any)</span>
+        </label>
+        {selected.length > 0 && (
+          <button
+            onClick={() => onAddMultiple([])}
+            className="text-xs text-gray-500 hover:text-red-600"
+          >
+            Clear all
+          </button>
+        )}
+      </div>
+
+      {/* Selected chips */}
+      {selected.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 mb-3">
+          {selected.map((dest) => (
+            <Chip
+              key={dest}
+              label={dest}
+              selected={true}
+              onClick={() => onToggle(dest)}
+              color={color}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Search input */}
+      <div className="relative mb-2">
+        <MagnifyingGlassIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+        <input
+          type="text"
+          placeholder="Type to search destinations..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white"
+        />
+        {loading && (
+          <div className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin" />
+        )}
+      </div>
+
+      {/* Available destinations */}
+      {loading ? (
+        <p className="text-xs text-gray-400 italic">Searching...</p>
+      ) : results.length === 0 ? (
+        <p className="text-xs text-gray-400 italic">
+          {search.trim() ? `No matches for "${search}"` : 'Type to search destinations'}
+        </p>
+      ) : (
+        <div className="space-y-2">
+          {/* Add all button */}
+          {search.trim() && unselectedResults.length > 0 && (
+            <button
+              onClick={handleAddAll}
+              className={`w-full py-1.5 text-xs font-medium text-white rounded-md ${btnColor} transition-colors`}
+            >
+              Add all {unselectedResults.length} matches for "{search}"
+            </button>
+          )}
+
+          {/* Results list */}
+          <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto">
+            {results.map((dest) => (
+              <Chip
+                key={dest}
+                label={dest}
+                selected={selected.includes(dest)}
+                onClick={() => onToggle(dest)}
+                color={color}
+              />
+            ))}
+            {results.length >= 100 && (
+              <span className="text-xs text-gray-400 py-1">
+                Showing first 100 (refine search)
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function NotificationSettings({
   clientId,
   onClose,
@@ -106,16 +245,31 @@ export default function NotificationSettings({
     geofenceIds: [],
   });
 
+  // Close on Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
   useEffect(() => {
     async function loadData() {
       try {
-        const geofenceRes = await fetch(`/api/geofences?clientId=${clientId}`);
+        // Fetch geofences and preferences in parallel
+        const [geofenceRes, prefsRes] = await Promise.all([
+          fetch(`/api/geofences?clientId=${clientId}`),
+          fetch(`/api/preferences?clientId=${clientId}`),
+        ]);
+
         if (geofenceRes.ok) {
           const geofences = await geofenceRes.json();
           setAvailableGeofences(geofences);
         }
 
-        const prefsRes = await fetch(`/api/preferences?clientId=${clientId}`);
         if (prefsRes.ok) {
           const data = await prefsRes.json();
           if (data.destinationChange) {
@@ -173,6 +327,20 @@ export default function NotificationSettings({
       [list]: prev[list].includes(destination)
         ? prev[list].filter((d) => d !== destination)
         : [...prev[list], destination],
+    }));
+  };
+
+  const setDestinations = (list: 'fromDestinations' | 'toDestinations', destinations: string[]) => {
+    setDestinationPrefs((prev) => ({
+      ...prev,
+      [list]: destinations,
+    }));
+  };
+
+  const addDestinations = (list: 'fromDestinations' | 'toDestinations', destinations: string[]) => {
+    setDestinationPrefs((prev) => ({
+      ...prev,
+      [list]: [...new Set([...prev[list], ...destinations])], // Merge and dedupe
     }));
   };
 
@@ -270,44 +438,56 @@ export default function NotificationSettings({
             </div>
 
             {destinationPrefs.enabled && (
-              <div className="ml-12 space-y-5">
-                {/* From Destinations */}
-                <div className="space-y-2">
-                  <label className="block text-sm font-medium text-gray-700">
-                    Departing from
-                    <span className="font-normal text-gray-400 ml-1">(empty = any)</span>
+              <div className="ml-12 space-y-4">
+                {/* Filter mode toggle */}
+                <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="destFilter"
+                      checked={destinationPrefs.fromDestinations.length === 0 && destinationPrefs.toDestinations.length === 0}
+                      onChange={() => setDestinationPrefs(prev => ({ ...prev, fromDestinations: [], toDestinations: [] }))}
+                      className="w-4 h-4 text-blue-600"
+                    />
+                    <span className="text-sm text-gray-700">All destination changes</span>
                   </label>
-                  <div className="flex flex-wrap gap-2">
-                    {AVAILABLE_DESTINATIONS.map((dest) => (
-                      <Chip
-                        key={`from-${dest}`}
-                        label={dest}
-                        selected={destinationPrefs.fromDestinations.includes(dest)}
-                        onClick={() => toggleDestination('fromDestinations', dest)}
-                        color="blue"
-                      />
-                    ))}
-                  </div>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="destFilter"
+                      checked={destinationPrefs.fromDestinations.length > 0 || destinationPrefs.toDestinations.length > 0}
+                      onChange={() => {}}
+                      className="w-4 h-4 text-blue-600"
+                    />
+                    <span className="text-sm text-gray-700">Specific destinations</span>
+                  </label>
                 </div>
 
+                {/* From Destinations */}
+                <DestinationSelector
+                  label="Departing from"
+                  color="blue"
+                  selected={destinationPrefs.fromDestinations}
+                  onToggle={(dest) => toggleDestination('fromDestinations', dest)}
+                  onAddMultiple={(dests) =>
+                    dests.length === 0
+                      ? setDestinations('fromDestinations', [])
+                      : addDestinations('fromDestinations', dests)
+                  }
+                />
+
                 {/* To Destinations */}
-                <div className="space-y-2">
-                  <label className="block text-sm font-medium text-gray-700">
-                    Arriving at
-                    <span className="font-normal text-gray-400 ml-1">(empty = any)</span>
-                  </label>
-                  <div className="flex flex-wrap gap-2">
-                    {AVAILABLE_DESTINATIONS.map((dest) => (
-                      <Chip
-                        key={`to-${dest}`}
-                        label={dest}
-                        selected={destinationPrefs.toDestinations.includes(dest)}
-                        onClick={() => toggleDestination('toDestinations', dest)}
-                        color="green"
-                      />
-                    ))}
-                  </div>
-                </div>
+                <DestinationSelector
+                  label="Arriving at"
+                  color="green"
+                  selected={destinationPrefs.toDestinations}
+                  onToggle={(dest) => toggleDestination('toDestinations', dest)}
+                  onAddMultiple={(dests) =>
+                    dests.length === 0
+                      ? setDestinations('toDestinations', [])
+                      : addDestinations('toDestinations', dests)
+                  }
+                />
               </div>
             )}
           </section>

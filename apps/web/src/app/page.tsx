@@ -12,6 +12,7 @@ import type { MapViewHandle } from '@/components/MapView';
 import NotificationCenter from '@/components/NotificationCenter';
 import GeofenceList from '@/components/GeofenceList';
 import NotificationSettings from '@/components/NotificationSettings';
+import DataSummary from '@/components/DataSummary';
 
 const MapView = dynamic(() => import('@/components/MapView'), {
   ssr: false,
@@ -28,7 +29,6 @@ const MapView = dynamic(() => import('@/components/MapView'), {
 const CLIENT_ID = 'demo-client';
 
 export default function Home() {
-  const mapRef = useRef<MapViewHandle>(null);
   const mapHandleRef = useRef<MapViewHandle | null>(null);
   const [socket, setSocket] = useState<Socket | null>(null);
   const [vessels, setVessels] = useState<Map<number, VesselState>>(new Map());
@@ -46,11 +46,26 @@ export default function Home() {
       .then((data) => setGeofences(data))
       .catch(console.error);
 
-    fetch(`/api/notifications?clientId=${CLIENT_ID}`)
+    fetch(`/api/notifications?clientId=${CLIENT_ID}&limit=500`)
       .then((res) => res.json())
       .then((data) => {
         setNotifications(data);
         setUnreadCount(data.filter((n: Notification) => n.status !== 'read').length);
+      })
+      .catch(console.error);
+
+    // Fetch all cached vessel positions
+    fetch('/api/vessels')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.vessels) {
+          const vesselMap = new Map<number, VesselState>();
+          data.vessels.forEach((v: VesselState) => {
+            vesselMap.set(v.IMO, v);
+          });
+          setVessels(vesselMap);
+          console.log(`Loaded ${data.vessels.length} vessels from cache`);
+        }
       })
       .catch(console.error);
   }, []);
@@ -163,14 +178,15 @@ export default function Home() {
         {/* Header */}
         <div className="p-4 border-b border-gray-200">
           <h1 className="text-lg font-semibold text-gray-900">Maritime Notifications</h1>
-          <div className="flex items-center gap-3 mt-2 text-sm">
-            <div className="flex items-center gap-1.5">
-              <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-red-500'}`} />
-              <span className="text-gray-600">{isConnected ? 'Connected' : 'Disconnected'}</span>
-            </div>
-            <span className="text-gray-300">|</span>
-            <span className="text-gray-600">{vessels.size} vessels</span>
+          <div className="flex items-center gap-1.5 mt-2 text-sm">
+            <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-red-500'}`} />
+            <span className="text-gray-600">{isConnected ? 'Connected' : 'Disconnected'}</span>
           </div>
+        </div>
+
+        {/* Data Summary */}
+        <div className="p-4 border-b border-gray-200">
+          <DataSummary socket={socket} />
         </div>
 
         {/* Geofences */}
@@ -216,7 +232,6 @@ export default function Home() {
       {/* Map */}
       <div className="flex-1 relative">
         <MapView
-          ref={mapRef}
           vessels={Array.from(vessels.values())}
           geofences={geofences}
           onGeofenceCreate={handleGeofenceCreate}

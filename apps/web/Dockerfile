@@ -16,8 +16,16 @@ RUN pnpm install --frozen-lockfile
 # Copy source files
 COPY apps/web apps/web
 
-# Copy root .env file for NEXT_PUBLIC_* variables (needed at build time)
-COPY .env apps/web/.env
+# Build-time args for NEXT_PUBLIC_* variables (these get inlined during build)
+ARG NEXT_PUBLIC_MAPBOX_TOKEN
+ARG NEXT_PUBLIC_APP_URL=""
+ARG NEXT_PUBLIC_WS_URL=""
+ENV NEXT_PUBLIC_MAPBOX_TOKEN=$NEXT_PUBLIC_MAPBOX_TOKEN
+ENV NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL
+ENV NEXT_PUBLIC_WS_URL=$NEXT_PUBLIC_WS_URL
+
+# Note: Don't copy .env file - server-side env vars (REDIS_HOST, etc.)
+# are provided by ECS at runtime
 
 # Generate Prisma client
 WORKDIR /app/apps/web

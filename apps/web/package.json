@@ -2,6 +2,9 @@
   "name": "web",
   "version": "0.1.0",
   "private": true,
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
   "scripts": {
     "dev": "tsx server.ts",
     "dev:next": "next dev",
@@ -17,8 +20,9 @@
     "@heroicons/react": "^2.2.0",
     "@mapbox/mapbox-gl-draw": "^1.4.3",
     "@prisma/client": "^5.14.0",
+    "@socket.io/redis-adapter": "^8.3.0",
     "@turf/turf": "^6.5.0",
-    "kafkajs": "^2.2.4",
+    "ioredis": "^5.3.2",
     "mapbox-gl": "^3.3.0",
     "next": "14.2.3",
     "react": "^18.3.1",
