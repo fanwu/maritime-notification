@@ -10,8 +10,11 @@ import {
   getCachedDestination,
   cacheDestination,
   cacheVesselPosition,
+  getCachedVesselFullState,
+  cacheVesselFullState,
 } from './redis.js';
 import { evaluateGeofence, evaluateCompare, evaluateChange, isVesselInGeofence } from './geofence.js';
+import { evaluateDynamicRule, DynamicCondition, EvaluationContext } from './dynamic-evaluator.js';
 import type { VesselState, ClientRule, EvaluationResult, Notification } from './types.js';
 
 // Cache for rules (refreshed periodically)
@@ -99,11 +102,18 @@ async function generateNotification(
   vessel: VesselState,
   result: EvaluationResult
 ): Promise<Notification> {
-  const template = rule.notificationType?.defaultTemplate || { title: 'Notification', message: '' };
+  // Check for custom template in rule settings first, then fall back to default
+  const settings = rule.settings as { template?: { title: string; message: string } } | undefined;
+  const customTemplate = settings?.template;
+  const defaultTemplate = rule.notificationType?.defaultTemplate || { title: 'Notification', message: '' };
+  const template = customTemplate || defaultTemplate;
 
-  // Build context for template
+  // Build context for template - include both original field names and lowercase aliases
   const context: Record<string, unknown> = {
     ...result.context,
+    // Original vessel field names (for templates like {{Speed}}, {{AreaName}})
+    ...vessel,
+    // Common aliases (lowercase)
     vesselName: vessel.VesselName || `IMO ${vessel.IMO}`,
     imo: vessel.IMO,
     vesselType: vessel.VesselType,
@@ -115,6 +125,18 @@ async function generateNotification(
     status: vessel.VesselVoyageStatus,
     timestamp: new Date().toISOString(),
   };
+
+  // Add lowercase aliases for previous values (from dynamic evaluator's previous_Field format)
+  // Only add if the value is defined and not null
+  if (result.context) {
+    for (const [key, value] of Object.entries(result.context)) {
+      if (key.startsWith('previous_') && value !== undefined && value !== null) {
+        const fieldName = key.replace('previous_', '');
+        // Add camelCase alias: previous_Speed -> previousSpeed
+        context[`previous${fieldName}`] = value;
+      }
+    }
+  }
 
   // Render templates
   const title = renderTemplate(template.title, context);
@@ -211,6 +233,32 @@ export async function processVesselState(vessel: VesselState): Promise<void> {
           break;
         }
 
+        case 'dynamic': {
+          // Dynamic rule evaluation - supports any field combination
+          const dynamicCondition = rule.condition as unknown as DynamicCondition;
+
+          // Get previous full state from Redis for change detection
+          const previousState = await getCachedVesselFullState(vessel.IMO);
+
+          const ctx: EvaluationContext = {
+            currentState: vessel,
+            previousState,
+          };
+
+          const evalResult = evaluateDynamicRule(dynamicCondition, ctx);
+
+          result = {
+            triggered: evalResult.triggered,
+            context: {
+              ...evalResult.context,
+              conditionResults: evalResult.conditionResults,
+              vesselName: vessel.VesselName || `IMO ${vessel.IMO}`,
+              imo: vessel.IMO,
+            },
+          };
+          break;
+        }
+
         default:
           console.warn(`Unknown evaluator: ${evaluator}`);
           continue;
@@ -226,6 +274,10 @@ export async function processVesselState(vessel: VesselState): Promise<void> {
       console.error(`Error processing rule ${rule.id}:`, error);
     }
   }
+
+  // Cache full vessel state for dynamic rule change detection
+  // This is done after all rules are processed to capture the latest state
+  await cacheVesselFullState(vessel);
 }
 
 /**

@@ -8,7 +8,12 @@ import {
   CheckIcon,
   InformationCircleIcon,
   MagnifyingGlassIcon,
+  BoltIcon,
+  PlusIcon,
+  PencilIcon,
+  TrashIcon,
 } from '@heroicons/react/24/outline';
+import DynamicRuleBuilder from './DynamicRuleBuilder';
 
 interface DestinationPreferences {
   enabled: boolean;
@@ -24,6 +29,30 @@ interface GeofencePreferences {
 interface Geofence {
   id: string;
   name: string;
+}
+
+interface DynamicRule {
+  id: string;
+  name: string;
+  condition: {
+    logic: 'AND' | 'OR';
+    conditions: Array<{
+      id: string;
+      field: string;
+      operator: string;
+      value?: unknown;
+      values?: unknown[];
+      tolerance?: number;
+    }>;
+  };
+  filters: Record<string, unknown>;
+  settings: {
+    template?: {
+      title: string;
+      message: string;
+    };
+  };
+  isActive: boolean;
 }
 
 interface NotificationSettingsProps {
@@ -244,6 +273,9 @@ export default function NotificationSettings({
     enabled: true,
     geofenceIds: [],
   });
+  const [dynamicRules, setDynamicRules] = useState<DynamicRule[]>([]);
+  const [showRuleBuilder, setShowRuleBuilder] = useState(false);
+  const [editingRule, setEditingRule] = useState<DynamicRule | null>(null);
 
   // Close on Escape key
   useEffect(() => {
@@ -259,10 +291,11 @@ export default function NotificationSettings({
   useEffect(() => {
     async function loadData() {
       try {
-        // Fetch geofences and preferences in parallel
-        const [geofenceRes, prefsRes] = await Promise.all([
+        // Fetch geofences, preferences, and dynamic rules in parallel
+        const [geofenceRes, prefsRes, rulesRes] = await Promise.all([
           fetch(`/api/geofences?clientId=${clientId}`),
           fetch(`/api/preferences?clientId=${clientId}`),
+          fetch(`/api/rules?clientId=${clientId}&typeId=dynamic_rule`),
         ]);
 
         if (geofenceRes.ok) {
@@ -281,6 +314,11 @@ export default function NotificationSettings({
               geofenceIds: data.geofenceAlert.geofenceIds ?? [],
             });
           }
+        }
+
+        if (rulesRes.ok) {
+          const rules = await rulesRes.json();
+          setDynamicRules(rules);
         }
       } catch (error) {
         console.error('Failed to load data:', error);
@@ -340,8 +378,76 @@ export default function NotificationSettings({
   const addDestinations = (list: 'fromDestinations' | 'toDestinations', destinations: string[]) => {
     setDestinationPrefs((prev) => ({
       ...prev,
-      [list]: [...new Set([...prev[list], ...destinations])], // Merge and dedupe
+      [list]: Array.from(new Set([...prev[list], ...destinations])), // Merge and dedupe
     }));
+  };
+
+  // Dynamic rule handlers
+  const handleSaveRule = async (rule: Omit<DynamicRule, 'id'> & { id?: string }) => {
+    if (rule.id) {
+      // Update existing rule
+      const res = await fetch(`/api/rules/${rule.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(rule),
+      });
+      if (res.ok) {
+        const updated = await res.json();
+        setDynamicRules((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
+      }
+    } else {
+      // Create new rule
+      const res = await fetch('/api/rules', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...rule, clientId }),
+      });
+      if (res.ok) {
+        const created = await res.json();
+        setDynamicRules((prev) => [created, ...prev]);
+      }
+    }
+    setShowRuleBuilder(false);
+    setEditingRule(null);
+  };
+
+  const handleDeleteRule = async (ruleId: string) => {
+    if (!confirm('Are you sure you want to delete this rule?')) return;
+    const res = await fetch(`/api/rules/${ruleId}`, { method: 'DELETE' });
+    if (res.ok) {
+      setDynamicRules((prev) => prev.filter((r) => r.id !== ruleId));
+    }
+  };
+
+  const handleToggleRule = async (ruleId: string, isActive: boolean) => {
+    const res = await fetch(`/api/rules/${ruleId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ isActive }),
+    });
+    if (res.ok) {
+      setDynamicRules((prev) =>
+        prev.map((r) => (r.id === ruleId ? { ...r, isActive } : r))
+      );
+    }
+  };
+
+  const formatCondition = (condition: DynamicRule['condition']) => {
+    const parts = condition.conditions.map((c) => {
+      let desc = c.field;
+      switch (c.operator) {
+        case 'eq': desc += ` = ${c.value}`; break;
+        case 'neq': desc += ` ≠ ${c.value}`; break;
+        case 'gt': desc += ` > ${c.value}`; break;
+        case 'lt': desc += ` < ${c.value}`; break;
+        case 'changed': desc += ' changed'; break;
+        case 'changed_to': desc += ` → ${(c.values || []).join(', ')}`; break;
+        case 'changed_from': desc += ` ← ${(c.values || []).join(', ')}`; break;
+        default: desc += ` ${c.operator}`;
+      }
+      return desc;
+    });
+    return parts.join(` ${condition.logic} `);
   };
 
   if (loading) {
@@ -465,7 +571,7 @@ export default function NotificationSettings({
 
                 {/* From Destinations */}
                 <DestinationSelector
-                  label="Departing from"
+                  label="Changed from"
                   color="blue"
                   selected={destinationPrefs.fromDestinations}
                   onToggle={(dest) => toggleDestination('fromDestinations', dest)}
@@ -478,7 +584,7 @@ export default function NotificationSettings({
 
                 {/* To Destinations */}
                 <DestinationSelector
-                  label="Arriving at"
+                  label="Changed to"
                   color="green"
                   selected={destinationPrefs.toDestinations}
                   onToggle={(dest) => toggleDestination('toDestinations', dest)}
@@ -490,6 +596,90 @@ export default function NotificationSettings({
                 />
               </div>
             )}
+          </section>
+
+          <hr className="border-gray-200" />
+
+          {/* Dynamic Rules Section */}
+          <section className="space-y-4">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <div className="p-2 bg-purple-100 rounded-lg">
+                  <BoltIcon className="w-5 h-5 text-purple-600" />
+                </div>
+                <div>
+                  <h3 className="font-medium text-gray-900">Dynamic Rules</h3>
+                  <p className="text-sm text-gray-500">Create custom notification rules with any field conditions</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setEditingRule(null);
+                  setShowRuleBuilder(true);
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
+              >
+                <PlusIcon className="w-4 h-4" />
+                Add Rule
+              </button>
+            </div>
+
+            {/* Rules List */}
+            <div className="space-y-2">
+              {dynamicRules.length === 0 ? (
+                <p className="text-sm text-gray-400 italic py-3 px-4 bg-gray-50 rounded-lg">
+                  No dynamic rules created yet. Click "Add Rule" to create one.
+                </p>
+              ) : (
+                dynamicRules.map((rule) => (
+                  <div
+                    key={rule.id}
+                    className={`flex items-center justify-between gap-3 p-3 rounded-lg border ${
+                      rule.isActive ? 'bg-purple-50 border-purple-200' : 'bg-gray-50 border-gray-200'
+                    }`}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className={`font-medium text-sm ${rule.isActive ? 'text-gray-900' : 'text-gray-500'}`}>
+                          {rule.name}
+                        </span>
+                        {!rule.isActive && (
+                          <span className="px-1.5 py-0.5 text-xs bg-gray-200 text-gray-600 rounded">
+                            Disabled
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-500 truncate mt-0.5">
+                        {formatCondition(rule.condition)}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Toggle
+                        enabled={rule.isActive}
+                        onChange={(v) => handleToggleRule(rule.id, v)}
+                      />
+                      <button
+                        onClick={() => {
+                          setEditingRule(rule);
+                          setShowRuleBuilder(true);
+                        }}
+                        className="p-1.5 text-gray-400 hover:text-purple-600 hover:bg-purple-100 rounded transition-colors"
+                        title="Edit rule"
+                      >
+                        <PencilIcon className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteRule(rule.id)}
+                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-100 rounded transition-colors"
+                        title="Delete rule"
+                      >
+                        <TrashIcon className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
           </section>
 
           {/* Info Box */}
@@ -525,6 +715,18 @@ export default function NotificationSettings({
           </button>
         </div>
       </div>
+
+      {/* Dynamic Rule Builder Modal */}
+      {showRuleBuilder && (
+        <DynamicRuleBuilder
+          rule={editingRule || undefined}
+          onSave={handleSaveRule}
+          onClose={() => {
+            setShowRuleBuilder(false);
+            setEditingRule(null);
+          }}
+        />
+      )}
     </div>
   );
 }

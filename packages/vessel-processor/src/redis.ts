@@ -179,3 +179,82 @@ export async function getCachedDestination(imo: number): Promise<string | null> 
   const key = `vessel:${imo}:destination`;
   return client.get(key);
 }
+
+// ============================================
+// Full Vessel State Caching for Dynamic Rules
+// ============================================
+
+// Fields to track for change detection in dynamic rules
+const TRACKED_STATE_FIELDS = [
+  'VesselName',
+  'Speed',
+  'VesselVoyageStatus',
+  'VesselStatus',
+  'AISDestination',
+  'AreaName',
+  'AreaNameLevel1',
+  'Heading',
+  'Draught',
+  'Course',
+  'IsSeagoing',
+] as const;
+
+/**
+ * Get cached full vessel state for dynamic rule evaluation
+ * Returns the previous state to compare against current state
+ */
+export async function getCachedVesselFullState(imo: number): Promise<Partial<VesselState> | null> {
+  const client = getRedis();
+  const key = `vessel:fullstate:${imo}`;
+  const data = await client.hgetall(key);
+
+  if (!data || Object.keys(data).length === 0) {
+    return null;
+  }
+
+  // Parse stored values back to appropriate types
+  const state: Partial<VesselState> = {};
+  for (const [field, value] of Object.entries(data)) {
+    if (value === 'true') {
+      (state as Record<string, unknown>)[field] = true;
+    } else if (value === 'false') {
+      (state as Record<string, unknown>)[field] = false;
+    } else if (value !== '' && !isNaN(Number(value))) {
+      (state as Record<string, unknown>)[field] = Number(value);
+    } else {
+      (state as Record<string, unknown>)[field] = value;
+    }
+  }
+
+  return state;
+}
+
+/**
+ * Cache full vessel state for dynamic rule change detection
+ * This should be called after processing all rules for a vessel
+ */
+export async function cacheVesselFullState(vessel: VesselState): Promise<void> {
+  const client = getRedis();
+  const key = `vessel:fullstate:${vessel.IMO}`;
+  const data: Record<string, string> = {};
+
+  for (const field of TRACKED_STATE_FIELDS) {
+    const value = vessel[field as keyof VesselState];
+    if (value !== undefined && value !== null) {
+      data[field] = String(value);
+    }
+  }
+
+  if (Object.keys(data).length > 0) {
+    await client.hset(key, data);
+    // 24 hour TTL - vessels should update more frequently than this
+    await client.expire(key, 86400);
+  }
+}
+
+/**
+ * Get all tracked fields (for API use)
+ */
+export function getTrackedStateFields(): readonly string[] {
+  return TRACKED_STATE_FIELDS;
+}
