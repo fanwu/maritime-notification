@@ -120,6 +120,64 @@ const notificationTypes = [
     stateTracking: JSON.stringify({ enabled: true, transitionEvents: ['change'] }),
     isSystem: true,
   },
+  // Dynamic Rule - allows users to create custom rules without code changes
+  {
+    typeId: 'dynamic_rule',
+    name: 'Dynamic Rule',
+    description: 'User-defined notification rule with custom conditions. Supports any combination of field conditions with AND/OR logic.',
+    dataSource: 'vessel.state',
+    conditionSchema: JSON.stringify({
+      evaluator: 'dynamic',
+      supportsComposite: true,
+      parameters: {
+        type: 'object',
+        properties: {
+          logic: { enum: ['AND', 'OR'], description: 'How to combine conditions' },
+          conditions: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                id: { type: 'string' },
+                field: { type: 'string', description: 'VesselState field name' },
+                operator: {
+                  enum: ['eq', 'neq', 'gt', 'gte', 'lt', 'lte', 'in', 'not_in',
+                         'contains', 'starts_with', 'changed', 'changed_to',
+                         'changed_from', 'changed_by']
+                },
+                value: { description: 'Value for comparison operators' },
+                values: { type: 'array', description: 'Values for in/changed_to/changed_from' },
+                tolerance: { type: 'number', description: 'Tolerance for changed_by' },
+              },
+              required: ['id', 'field', 'operator'],
+            },
+          },
+        },
+        required: ['logic', 'conditions'],
+      },
+    }),
+    defaultTemplate: JSON.stringify({
+      title: 'Alert: {{vesselName}}',
+      message: 'Dynamic rule triggered for {{vesselName}} (IMO: {{imo}})',
+    }),
+    stateTracking: JSON.stringify({ enabled: true, trackAllFields: true }),
+    uiSchema: JSON.stringify({
+      availableFields: [
+        { name: 'IMO', type: 'number', label: 'IMO Number' },
+        { name: 'Speed', type: 'number', label: 'Speed (knots)' },
+        { name: 'VesselVoyageStatus', type: 'string', label: 'Voyage Status' },
+        { name: 'VesselStatus', type: 'string', label: 'Vessel Status' },
+        { name: 'AISDestination', type: 'string', label: 'AIS Destination' },
+        { name: 'AreaName', type: 'string', label: 'Area' },
+        { name: 'AreaNameLevel1', type: 'string', label: 'Region' },
+        { name: 'Heading', type: 'number', label: 'Heading (degrees)' },
+        { name: 'Draught', type: 'number', label: 'Draught (meters)' },
+        { name: 'Course', type: 'number', label: 'Course (degrees)' },
+        { name: 'IsSeagoing', type: 'boolean', label: 'Is Seagoing' },
+      ],
+    }),
+    isSystem: true,
+  },
 ];
 
 async function main() {
@@ -174,6 +232,107 @@ async function main() {
     },
   });
   console.log('  Created demo rule: Singapore Strait Watch');
+
+  // Create demo dynamic rules
+  // Demo 1: Vessel Stopped (IsSeagoing changed from true)
+  await prisma.clientRule.upsert({
+    where: { id: 'demo-rule-vessel-stopped' },
+    update: {
+      condition: JSON.stringify({
+        logic: 'AND',
+        conditions: [
+          {
+            id: 'seagoing-changed',
+            field: 'IsSeagoing',
+            operator: 'changed_from',
+            values: [true],
+          },
+        ],
+      }),
+      settings: JSON.stringify({
+        template: {
+          title: 'Voyage Ended: {{vesselName}}',
+          message: '{{vesselName}} (IMO: {{imo}}) has stopped its voyage at {{AreaName}}. Speed: {{Speed}} knots.',
+        },
+      }),
+    },
+    create: {
+      id: 'demo-rule-vessel-stopped',
+      clientId: 'demo-client',
+      typeId: 'dynamic_rule',
+      name: 'Vessel Stopped Voyage',
+      condition: JSON.stringify({
+        logic: 'AND',
+        conditions: [
+          {
+            id: 'seagoing-changed',
+            field: 'IsSeagoing',
+            operator: 'changed_from',
+            values: [true],
+          },
+        ],
+      }),
+      filters: JSON.stringify({}),
+      settings: JSON.stringify({
+        template: {
+          title: 'Voyage Ended: {{vesselName}}',
+          message: '{{vesselName}} (IMO: {{imo}}) has stopped its voyage at {{AreaName}}. Speed: {{Speed}} knots.',
+        },
+      }),
+      isActive: true,
+    },
+  });
+  console.log('  Created demo rule: Vessel Stopped Voyage');
+
+  // Demo 2: Voyage Status Changed to Discharging
+  await prisma.clientRule.upsert({
+    where: { id: 'demo-rule-status-discharging' },
+    update: {
+      condition: JSON.stringify({
+        logic: 'AND',
+        conditions: [
+          {
+            id: 'status-to-discharging',
+            field: 'VesselVoyageStatus',
+            operator: 'changed_to',
+            values: ['Discharging'],
+          },
+        ],
+      }),
+      settings: JSON.stringify({
+        template: {
+          title: 'Now Discharging: {{vesselName}}',
+          message: '{{vesselName}} (IMO: {{imo}}) has started discharging at {{AreaName}}.',
+        },
+      }),
+    },
+    create: {
+      id: 'demo-rule-status-discharging',
+      clientId: 'demo-client',
+      typeId: 'dynamic_rule',
+      name: 'Vessel Started Discharging',
+      condition: JSON.stringify({
+        logic: 'AND',
+        conditions: [
+          {
+            id: 'status-to-discharging',
+            field: 'VesselVoyageStatus',
+            operator: 'changed_to',
+            values: ['Discharging'],
+          },
+        ],
+      }),
+      filters: JSON.stringify({}),
+      settings: JSON.stringify({
+        template: {
+          title: 'Now Discharging: {{vesselName}}',
+          message: '{{vesselName}} (IMO: {{imo}}) has started discharging at {{AreaName}}.',
+        },
+      }),
+      isActive: true,
+    },
+  });
+  console.log('  Created demo rule: Vessel Started Discharging');
 
   console.log('Seeding complete!');
 }
