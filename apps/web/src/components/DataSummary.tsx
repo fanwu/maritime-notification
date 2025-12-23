@@ -38,8 +38,8 @@ function StatCard({ label, value, icon, color }: StatCardProps) {
       <div className="flex items-center gap-2">
         <div className="flex-shrink-0">{icon}</div>
         <div className="min-w-0">
-          <p className="text-xs font-medium text-gray-500 truncate">{label}</p>
-          <p className="text-lg font-bold text-gray-900">
+          <p className="text-xs font-medium text-slate-400 truncate">{label}</p>
+          <p className="text-lg font-bold text-white">
             {value.toLocaleString()}
           </p>
         </div>
@@ -96,8 +96,8 @@ export default function DataSummary({ socket }: DataSummaryProps) {
 
   if (loading && !stats) {
     return (
-      <div className="p-4 bg-gray-50 rounded-lg">
-        <div className="flex items-center gap-2 text-gray-500">
+      <div className="p-4 bg-slate-800 rounded-lg">
+        <div className="flex items-center gap-2 text-slate-400">
           <ArrowPathIcon className="w-4 h-4 animate-spin" />
           <span className="text-sm">Loading stats...</span>
         </div>
@@ -107,8 +107,8 @@ export default function DataSummary({ socket }: DataSummaryProps) {
 
   if (error && !stats) {
     return (
-      <div className="p-4 bg-red-50 rounded-lg">
-        <p className="text-sm text-red-600">{error}</p>
+      <div className="p-4 bg-red-900/30 rounded-lg">
+        <p className="text-sm text-red-400">{error}</p>
       </div>
     );
   }
@@ -120,11 +120,11 @@ export default function DataSummary({ socket }: DataSummaryProps) {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <ChartBarIcon className="w-5 h-5 text-indigo-600" />
-          <h2 className="text-base font-semibold text-gray-900">Data Summary</h2>
+          <ChartBarIcon className="w-5 h-5 text-cyan-400" />
+          <h2 className="text-base font-semibold text-white">Vessel Data Summary</h2>
           {socket && (
-            <span className={`flex items-center gap-1 text-xs ${isLive ? 'text-green-600' : 'text-gray-400'}`}>
-              <span className={`w-1.5 h-1.5 rounded-full ${isLive ? 'bg-green-500 animate-pulse' : 'bg-gray-400'}`} />
+            <span className={`flex items-center gap-1 text-xs ${isLive ? 'text-emerald-400' : 'text-slate-500'}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${isLive ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
               live
             </span>
           )}
@@ -132,7 +132,7 @@ export default function DataSummary({ socket }: DataSummaryProps) {
         <button
           onClick={fetchStats}
           disabled={loading}
-          className="p-1 text-gray-400 hover:text-gray-600 rounded transition-colors"
+          className="p-1 text-slate-400 hover:text-white rounded transition-colors"
           title="Refresh stats"
         >
           <ArrowPathIcon className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -144,38 +144,38 @@ export default function DataSummary({ socket }: DataSummaryProps) {
         <StatCard
           label="Vessels"
           value={stats.vessels || 0}
-          icon={<TruckIcon className="w-5 h-5 text-blue-600" />}
-          color="bg-blue-50"
+          icon={<TruckIcon className="w-5 h-5 text-cyan-400" />}
+          color="bg-slate-800"
         />
         <StatCard
           label="Destinations"
           value={stats.destinations || 0}
-          icon={<MapPinIcon className="w-5 h-5 text-emerald-600" />}
-          color="bg-emerald-50"
+          icon={<MapPinIcon className="w-5 h-5 text-emerald-400" />}
+          color="bg-slate-800"
         />
         <StatCard
           label="Areas"
           value={stats.areas || 0}
-          icon={<GlobeAltIcon className="w-5 h-5 text-purple-600" />}
-          color="bg-purple-50"
+          icon={<GlobeAltIcon className="w-5 h-5 text-purple-400" />}
+          color="bg-slate-800"
         />
         <StatCard
           label="Vessel Types"
           value={stats.vesselTypes || 0}
-          icon={<ChartBarIcon className="w-5 h-5 text-orange-600" />}
-          color="bg-orange-50"
+          icon={<ChartBarIcon className="w-5 h-5 text-orange-400" />}
+          color="bg-slate-800"
         />
       </div>
 
       {/* Secondary Stats */}
       <div className="flex flex-wrap gap-2 text-xs">
-        <span className="px-2 py-1 bg-gray-100 rounded-full text-gray-600">
+        <span className="px-2 py-1 bg-slate-800 rounded-full text-slate-300">
           {stats.vesselClasses || 0} classes
         </span>
-        <span className="px-2 py-1 bg-gray-100 rounded-full text-gray-600">
+        <span className="px-2 py-1 bg-slate-800 rounded-full text-slate-300">
           {stats.areasLevel1 || 0} regions
         </span>
-        <span className="px-2 py-1 bg-gray-100 rounded-full text-gray-600">
+        <span className="px-2 py-1 bg-slate-800 rounded-full text-slate-300">
           {stats.voyageStatuses || 0} statuses
         </span>
       </div>

@@ -115,72 +115,122 @@ export default function NotificationCenter({
     return `${diffDays}d ago`;
   };
 
-  const getTypeConfig = (typeId: string) => {
+  // Color palette for dynamic rules - each rule gets a consistent color based on its name
+  const dynamicRuleColors = [
+    { name: 'rose', cardBg: 'bg-rose-950/40', cardBorder: 'border-l-rose-500', bgColor: 'bg-rose-900/50', textColor: 'text-rose-300', iconBg: 'bg-rose-900/50', iconColor: 'text-rose-400' },
+    { name: 'orange', cardBg: 'bg-orange-950/40', cardBorder: 'border-l-orange-500', bgColor: 'bg-orange-900/50', textColor: 'text-orange-300', iconBg: 'bg-orange-900/50', iconColor: 'text-orange-400' },
+    { name: 'lime', cardBg: 'bg-lime-950/40', cardBorder: 'border-l-lime-500', bgColor: 'bg-lime-900/50', textColor: 'text-lime-300', iconBg: 'bg-lime-900/50', iconColor: 'text-lime-400' },
+    { name: 'teal', cardBg: 'bg-teal-950/40', cardBorder: 'border-l-teal-500', bgColor: 'bg-teal-900/50', textColor: 'text-teal-300', iconBg: 'bg-teal-900/50', iconColor: 'text-teal-400' },
+    { name: 'sky', cardBg: 'bg-sky-950/40', cardBorder: 'border-l-sky-500', bgColor: 'bg-sky-900/50', textColor: 'text-sky-300', iconBg: 'bg-sky-900/50', iconColor: 'text-sky-400' },
+    { name: 'indigo', cardBg: 'bg-indigo-950/40', cardBorder: 'border-l-indigo-500', bgColor: 'bg-indigo-900/50', textColor: 'text-indigo-300', iconBg: 'bg-indigo-900/50', iconColor: 'text-indigo-400' },
+    { name: 'fuchsia', cardBg: 'bg-fuchsia-950/40', cardBorder: 'border-l-fuchsia-500', bgColor: 'bg-fuchsia-900/50', textColor: 'text-fuchsia-300', iconBg: 'bg-fuchsia-900/50', iconColor: 'text-fuchsia-400' },
+    { name: 'pink', cardBg: 'bg-pink-950/40', cardBorder: 'border-l-pink-500', bgColor: 'bg-pink-900/50', textColor: 'text-pink-300', iconBg: 'bg-pink-900/50', iconColor: 'text-pink-400' },
+  ];
+
+  // Simple hash function to get consistent color index from rule name
+  const hashString = (str: string): number => {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      hash = ((hash << 5) - hash) + str.charCodeAt(i);
+      hash = hash & hash;
+    }
+    return Math.abs(hash);
+  };
+
+  const getTypeConfig = (notification: Notification) => {
+    const typeId = notification.typeId;
     switch (typeId) {
       case 'geofence_alert':
         return {
           label: 'Geofence Alert',
-          bgColor: 'bg-blue-50',
-          textColor: 'text-blue-700',
-          borderColor: 'border-blue-200',
+          bgColor: 'bg-cyan-900/50',
+          textColor: 'text-cyan-300',
+          borderColor: 'border-cyan-700',
+          cardBg: 'bg-cyan-950/40',
+          cardBorder: 'border-l-4 border-l-cyan-500',
           icon: MapPinIcon,
-          iconBg: 'bg-blue-100',
-          iconColor: 'text-blue-600',
+          iconBg: 'bg-cyan-900/50',
+          iconColor: 'text-cyan-400',
         };
       case 'speed_alert':
         return {
           label: 'Speed Alert',
-          bgColor: 'bg-amber-50',
-          textColor: 'text-amber-700',
-          borderColor: 'border-amber-200',
+          bgColor: 'bg-amber-900/50',
+          textColor: 'text-amber-300',
+          borderColor: 'border-amber-700',
+          cardBg: 'bg-amber-950/40',
+          cardBorder: 'border-l-4 border-l-amber-500',
           icon: BoltIcon,
-          iconBg: 'bg-amber-100',
-          iconColor: 'text-amber-600',
+          iconBg: 'bg-amber-900/50',
+          iconColor: 'text-amber-400',
         };
       case 'destination_change':
         return {
           label: 'Destination Change',
-          bgColor: 'bg-purple-50',
-          textColor: 'text-purple-700',
-          borderColor: 'border-purple-200',
+          bgColor: 'bg-purple-900/50',
+          textColor: 'text-purple-300',
+          borderColor: 'border-purple-700',
+          cardBg: 'bg-purple-950/40',
+          cardBorder: 'border-l-4 border-l-purple-500',
           icon: ArrowsRightLeftIcon,
-          iconBg: 'bg-purple-100',
-          iconColor: 'text-purple-600',
+          iconBg: 'bg-purple-900/50',
+          iconColor: 'text-purple-400',
         };
       case 'status_change':
         return {
           label: 'Status Change',
-          bgColor: 'bg-emerald-50',
-          textColor: 'text-emerald-700',
-          borderColor: 'border-emerald-200',
+          bgColor: 'bg-emerald-900/50',
+          textColor: 'text-emerald-300',
+          borderColor: 'border-emerald-700',
+          cardBg: 'bg-emerald-950/40',
+          cardBorder: 'border-l-4 border-l-emerald-500',
           icon: ArrowPathIcon,
-          iconBg: 'bg-emerald-100',
-          iconColor: 'text-emerald-600',
+          iconBg: 'bg-emerald-900/50',
+          iconColor: 'text-emerald-400',
         };
+      case 'dynamic_rule': {
+        // Use rule name to pick a consistent color for this rule
+        const ruleName = (notification.payload?.ruleName as string) || 'default';
+        const colorIndex = hashString(ruleName) % dynamicRuleColors.length;
+        const colors = dynamicRuleColors[colorIndex];
+        return {
+          label: ruleName,
+          bgColor: colors.bgColor,
+          textColor: colors.textColor,
+          borderColor: `border-${colors.name}-700`,
+          cardBg: colors.cardBg,
+          cardBorder: `border-l-4 ${colors.cardBorder}`,
+          icon: BoltIcon,
+          iconBg: colors.iconBg,
+          iconColor: colors.iconColor,
+        };
+      }
       default:
         return {
           label: 'Notification',
-          bgColor: 'bg-gray-50',
-          textColor: 'text-gray-700',
-          borderColor: 'border-gray-200',
+          bgColor: 'bg-slate-700',
+          textColor: 'text-slate-300',
+          borderColor: 'border-slate-600',
+          cardBg: 'bg-slate-800/50',
+          cardBorder: 'border-l-4 border-l-slate-500',
           icon: BellIcon,
-          iconBg: 'bg-gray-100',
-          iconColor: 'text-gray-600',
+          iconBg: 'bg-slate-700',
+          iconColor: 'text-slate-400',
         };
     }
   };
 
   return (
-    <div className="h-full flex flex-col bg-white">
+    <div className="h-full flex flex-col bg-slate-900">
       {/* Header */}
-      <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
+      <div className="px-4 py-3 border-b border-slate-700 bg-slate-800">
         <div className="flex items-center justify-between mb-2">
-          <h2 className="text-base font-semibold text-gray-900">Notifications</h2>
+          <h2 className="text-base font-semibold text-white">Notifications</h2>
           <div className="flex items-center gap-1">
             {notifications.length > 0 && (
               <button
                 onClick={onClearAll}
-                className="flex items-center gap-1 text-xs text-gray-500 hover:text-red-600 px-2 py-1.5 hover:bg-red-50 rounded-md transition-colors"
+                className="flex items-center gap-1 text-xs text-slate-400 hover:text-red-400 px-2 py-1.5 hover:bg-red-900/30 rounded-md transition-colors"
               >
                 <TrashIcon className="w-3.5 h-3.5" />
                 <span>Clear All</span>
@@ -188,7 +238,7 @@ export default function NotificationCenter({
             )}
             <button
               onClick={onClose}
-              className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-200 rounded-md transition-colors"
+              className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded-md transition-colors"
             >
               <XMarkIcon className="w-5 h-5" />
             </button>
@@ -197,25 +247,25 @@ export default function NotificationCenter({
 
         {/* Search box */}
         <div className="relative">
-          <MagnifyingGlassIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <MagnifyingGlassIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
           <input
             type="text"
             placeholder="Filter by port name..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white"
+            className="w-full pl-8 pr-3 py-1.5 text-sm border border-slate-600 rounded-md focus:outline-none focus:ring-1 focus:ring-cyan-500 bg-slate-700 text-white placeholder-slate-400"
           />
           {searchTerm && (
             <button
               onClick={() => setSearchTerm('')}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
             >
               <XMarkIcon className="w-4 h-4" />
             </button>
           )}
         </div>
         {searchTerm && (
-          <p className="text-xs text-gray-500 mt-1">
+          <p className="text-xs text-slate-400 mt-1">
             Showing {filteredNotifications.length} of {notifications.length}
           </p>
         )}
@@ -224,26 +274,26 @@ export default function NotificationCenter({
       {/* Notification List */}
       <div className="flex-1 overflow-y-auto">
         {notifications.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 text-gray-400">
+          <div className="flex flex-col items-center justify-center py-12 text-slate-500">
             <BellIcon className="w-12 h-12 mb-3 stroke-1" />
             <p className="text-sm">No notifications</p>
           </div>
         ) : filteredNotifications.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 text-gray-400">
+          <div className="flex flex-col items-center justify-center py-12 text-slate-500">
             <MagnifyingGlassIcon className="w-12 h-12 mb-3 stroke-1" />
             <p className="text-sm">No matches for "{searchTerm}"</p>
           </div>
         ) : (
-          <div className="divide-y divide-gray-100">
+          <div className="divide-y divide-slate-700">
             {filteredNotifications.map((notification) => {
-              const config = getTypeConfig(notification.typeId);
+              const config = getTypeConfig(notification);
               const IconComponent = config.icon;
 
               return (
                 <div
                   key={notification.id}
-                  className={`p-4 hover:bg-gray-50 transition-colors ${
-                    notification.status !== 'read' ? 'bg-blue-50/50' : ''
+                  className={`p-4 transition-colors ${config.cardBg} ${config.cardBorder} ${
+                    notification.status !== 'read' ? 'ring-1 ring-inset ring-white/10' : ''
                   }`}
                 >
                   <div className="flex gap-3">
@@ -258,19 +308,19 @@ export default function NotificationCenter({
                         <span className={`text-xs font-medium px-2 py-0.5 rounded ${config.bgColor} ${config.textColor}`}>
                           {config.label}
                         </span>
-                        <span className="text-xs text-gray-400">
+                        <span className="text-xs text-slate-500">
                           {formatTime(notification.createdAt)}
                         </span>
                         {notification.status !== 'read' && (
-                          <span className="w-2 h-2 bg-blue-500 rounded-full" />
+                          <span className="w-2 h-2 bg-cyan-400 rounded-full" />
                         )}
                       </div>
 
-                      <h3 className="text-sm font-medium text-gray-900 leading-snug">
+                      <h3 className="text-sm font-medium text-white leading-snug">
                         {onVesselClick && notification.payload?.imo ? (
                           <button
                             onClick={() => onVesselClick(notification.payload!.imo as number)}
-                            className="text-blue-600 hover:text-blue-800 hover:underline text-left"
+                            className="text-cyan-400 hover:text-cyan-300 hover:underline text-left"
                           >
                             {notification.title}
                           </button>
@@ -279,12 +329,12 @@ export default function NotificationCenter({
                         )}
                       </h3>
 
-                      <p className="text-sm text-gray-500 mt-0.5 leading-snug">
+                      <p className="text-sm text-slate-400 mt-0.5 leading-snug">
                         {notification.message}
                       </p>
 
                       {notification.payload?.latitude && notification.payload?.longitude && (
-                        <div className="flex items-center gap-1 mt-2 text-xs text-gray-400">
+                        <div className="flex items-center gap-1 mt-2 text-xs text-slate-500">
                           <MapPinIcon className="w-3.5 h-3.5" />
                           <span>
                             {(notification.payload.latitude as number).toFixed(4)},{' '}

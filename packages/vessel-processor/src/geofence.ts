@@ -169,7 +169,51 @@ export function evaluateCompare(
 }
 
 /**
+ * Check if a value matches a pattern (supports wildcards)
+ * Patterns:
+ *   "*text*" - contains "text" (case-insensitive)
+ *   "*text"  - ends with "text" (case-insensitive)
+ *   "text*"  - starts with "text" (case-insensitive)
+ *   "text"   - exact match (case-insensitive)
+ */
+function matchesPattern(value: string, pattern: string): boolean {
+  const valueLower = value.toLowerCase();
+  const patternLower = pattern.toLowerCase();
+
+  const startsWithWildcard = patternLower.startsWith('*');
+  const endsWithWildcard = patternLower.endsWith('*');
+
+  // Remove wildcards to get the actual text to match
+  let searchText = patternLower;
+  if (startsWithWildcard) searchText = searchText.slice(1);
+  if (endsWithWildcard) searchText = searchText.slice(0, -1);
+
+  if (startsWithWildcard && endsWithWildcard) {
+    // *text* - contains
+    return valueLower.includes(searchText);
+  } else if (startsWithWildcard) {
+    // *text - ends with
+    return valueLower.endsWith(searchText);
+  } else if (endsWithWildcard) {
+    // text* - starts with
+    return valueLower.startsWith(searchText);
+  } else {
+    // exact match
+    return valueLower === patternLower;
+  }
+}
+
+/**
+ * Check if a value matches any of the patterns in the list
+ */
+function matchesAnyPattern(value: string, patterns: string[]): boolean {
+  return patterns.some(pattern => matchesPattern(value, pattern));
+}
+
+/**
  * Evaluate change condition (e.g., destination changed)
+ * Supports wildcard patterns in from/to filters:
+ *   "*SINGAPORE*" matches any destination containing "SINGAPORE"
  */
 export function evaluateChange(
   vessel: VesselState,
@@ -204,15 +248,15 @@ export function evaluateChange(
     };
   }
 
-  // Check from/to filters if specified
+  // Check from/to filters if specified (supports wildcard patterns)
   let triggered = true;
 
   if (condition.from && condition.from.length > 0) {
-    triggered = triggered && condition.from.includes(prevStr);
+    triggered = triggered && matchesAnyPattern(prevStr, condition.from);
   }
 
   if (condition.to && condition.to.length > 0) {
-    triggered = triggered && condition.to.includes(currStr);
+    triggered = triggered && matchesAnyPattern(currStr, condition.to);
   }
 
   return {

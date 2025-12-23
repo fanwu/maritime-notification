@@ -124,6 +124,9 @@ async function generateNotification(
     destination: vessel.AISDestination,
     status: vessel.VesselVoyageStatus,
     timestamp: new Date().toISOString(),
+    // Rule metadata for UI display
+    ruleName: rule.name,
+    ruleId: rule.id,
   };
 
   // Add lowercase aliases for previous values (from dynamic evaluator's previous_Field format)

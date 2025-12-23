@@ -172,20 +172,21 @@ export default function Home() {
   }, []);
 
   return (
-    <div className="flex h-screen bg-gray-100">
+    <div className="flex h-screen bg-slate-950">
       {/* Sidebar */}
-      <div className="w-80 bg-white border-r border-gray-200 flex flex-col">
+      <div className="w-80 bg-slate-900 border-r border-slate-700 flex flex-col">
         {/* Header */}
-        <div className="p-4 border-b border-gray-200">
-          <h1 className="text-lg font-semibold text-gray-900">Maritime Notifications</h1>
+        <div className="p-4 border-b border-slate-700">
+          <img src="/signal-logo.png" alt="Signal" className="h-8 mb-3" />
+          <h1 className="text-lg font-semibold text-white">Maritime Notifications</h1>
           <div className="flex items-center gap-1.5 mt-2 text-sm">
-            <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-500' : 'bg-red-500'}`} />
-            <span className="text-gray-600">{isConnected ? 'Connected' : 'Disconnected'}</span>
+            <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-400' : 'bg-red-400'}`} />
+            <span className="text-slate-400">{isConnected ? 'Connected' : 'Disconnected'}</span>
           </div>
         </div>
 
         {/* Data Summary */}
-        <div className="p-4 border-b border-gray-200">
+        <div className="p-4 border-b border-slate-700">
           <DataSummary socket={socket} />
         </div>
 
@@ -200,13 +201,13 @@ export default function Home() {
         </div>
 
         {/* Action Buttons */}
-        <div className="p-4 border-t border-gray-200 space-y-2">
+        <div className="p-4 border-t border-slate-700 space-y-2">
           <button
             onClick={() => setShowNotifications(!showNotifications)}
             className={`w-full flex items-center justify-between px-4 py-2.5 rounded-lg font-medium transition-colors ${
               showNotifications
-                ? 'bg-gray-900 text-white'
-                : 'bg-blue-600 text-white hover:bg-blue-700'
+                ? 'bg-cyan-500 text-slate-900'
+                : 'bg-cyan-500 text-slate-900 hover:bg-cyan-400'
             }`}
           >
             <div className="flex items-center gap-2">
@@ -214,14 +215,14 @@ export default function Home() {
               <span>Notifications</span>
             </div>
             {unreadCount > 0 && (
-              <span className="bg-red-500 text-white text-xs font-medium px-2 py-0.5 rounded-full min-w-[20px] text-center">
+              <span className="bg-purple-500 text-white text-xs font-medium px-2 py-0.5 rounded-full min-w-[20px] text-center">
                 {unreadCount > 99 ? '99+' : unreadCount}
               </span>
             )}
           </button>
           <button
             onClick={() => setShowSettings(true)}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium transition-colors"
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-white bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded-lg font-medium transition-colors"
           >
             <Cog6ToothIcon className="w-5 h-5" />
             <span>Settings</span>

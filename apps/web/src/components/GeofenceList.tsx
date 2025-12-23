@@ -46,14 +46,14 @@ export default function GeofenceList({ geofences, vessels, onDelete, onGeofenceC
     <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center gap-2">
-        <MapPinSolidIcon className="w-5 h-5 text-blue-600" />
-        <h2 className="text-base font-semibold text-gray-900">Geofences</h2>
-        <span className="text-sm text-gray-400">({geofences.length})</span>
+        <MapPinSolidIcon className="w-5 h-5 text-cyan-400" />
+        <h2 className="text-base font-semibold text-white">Geofences</h2>
+        <span className="text-sm text-slate-500">({geofences.length})</span>
       </div>
 
       {/* List */}
       {geofences.length === 0 ? (
-        <div className="text-sm text-gray-500 py-4 px-3 bg-gray-50 rounded-lg text-center">
+        <div className="text-sm text-slate-400 py-4 px-3 bg-slate-800 rounded-lg text-center">
           No geofences yet. Draw one on the map!
         </div>
       ) : (
@@ -64,15 +64,15 @@ export default function GeofenceList({ geofences, vessels, onDelete, onGeofenceC
               <div
                 key={geofence.id}
                 onClick={() => onGeofenceClick?.(geofence.id)}
-                className={`group p-3 bg-white border border-gray-200 rounded-lg hover:border-blue-300 hover:bg-blue-50/50 transition-colors ${onGeofenceClick ? 'cursor-pointer' : ''}`}
+                className={`group p-3 bg-slate-800 border border-slate-700 rounded-lg hover:border-cyan-500/50 hover:bg-slate-800/80 transition-colors ${onGeofenceClick ? 'cursor-pointer' : ''}`}
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1 min-w-0">
-                    <h3 className="font-medium text-gray-900 text-sm truncate">
+                    <h3 className="font-medium text-white text-sm truncate">
                       {geofence.name}
                     </h3>
-                    <p className="text-xs text-gray-500 mt-1 flex items-center gap-1">
-                      <span className={`inline-block w-1.5 h-1.5 rounded-full ${vesselCount > 0 ? 'bg-emerald-500' : 'bg-gray-300'}`} />
+                    <p className="text-xs text-slate-400 mt-1 flex items-center gap-1">
+                      <span className={`inline-block w-1.5 h-1.5 rounded-full ${vesselCount > 0 ? 'bg-emerald-400' : 'bg-slate-500'}`} />
                       {vesselCount === 0
                         ? 'No vessels inside'
                         : vesselCount === 1
@@ -85,14 +85,14 @@ export default function GeofenceList({ geofences, vessels, onDelete, onGeofenceC
                       e.stopPropagation();
                       onDelete(geofence.id);
                     }}
-                    className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md opacity-0 group-hover:opacity-100 transition-all"
+                    className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-red-900/30 rounded-md opacity-0 group-hover:opacity-100 transition-all"
                     title="Delete geofence"
                   >
                     <TrashIcon className="w-4 h-4" />
                   </button>
                 </div>
                 {geofence.description && (
-                  <p className="text-xs text-gray-500 mt-2 line-clamp-2">{geofence.description}</p>
+                  <p className="text-xs text-slate-500 mt-2 line-clamp-2">{geofence.description}</p>
                 )}
               </div>
             );
@@ -101,9 +101,9 @@ export default function GeofenceList({ geofences, vessels, onDelete, onGeofenceC
       )}
 
       {/* Tip */}
-      <div className="flex gap-2 p-3 bg-blue-50 rounded-lg">
-        <InformationCircleIcon className="w-4 h-4 text-blue-500 flex-shrink-0 mt-0.5" />
-        <p className="text-xs text-blue-700">
+      <div className="flex gap-2 p-3 bg-slate-800 border border-slate-700 rounded-lg">
+        <InformationCircleIcon className="w-4 h-4 text-cyan-400 flex-shrink-0 mt-0.5" />
+        <p className="text-xs text-slate-300">
           Use the polygon tool on the map to draw geofences. Click to add points, double-click to finish.
         </p>
       </div>

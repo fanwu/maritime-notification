@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   XMarkIcon,
   MapPinIcon,
@@ -68,7 +68,7 @@ function Toggle({ enabled, onChange }: { enabled: boolean; onChange: (v: boolean
       type="button"
       onClick={() => onChange(!enabled)}
       className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-        enabled ? 'bg-blue-600' : 'bg-gray-200'
+        enabled ? 'bg-cyan-500' : 'bg-slate-600'
       }`}
     >
       <span
@@ -85,20 +85,20 @@ function Chip({
   label,
   selected,
   onClick,
-  color = 'blue',
+  color = 'cyan',
 }: {
   label: string;
   selected: boolean;
   onClick: () => void;
-  color?: 'blue' | 'green';
+  color?: 'cyan' | 'emerald';
 }) {
   const colors = {
-    blue: selected
-      ? 'bg-blue-600 text-white border-blue-600'
-      : 'bg-white text-gray-700 border-gray-300 hover:border-blue-400',
-    green: selected
-      ? 'bg-emerald-600 text-white border-emerald-600'
-      : 'bg-white text-gray-700 border-gray-300 hover:border-emerald-400',
+    cyan: selected
+      ? 'bg-cyan-500 text-white border-cyan-500'
+      : 'bg-slate-700 text-slate-300 border-slate-600 hover:border-cyan-400',
+    emerald: selected
+      ? 'bg-emerald-500 text-white border-emerald-500'
+      : 'bg-slate-700 text-slate-300 border-slate-600 hover:border-emerald-400',
   };
 
   return (
@@ -112,7 +112,7 @@ function Chip({
   );
 }
 
-// Destination selector with server-side search
+// Destination selector with floating dropdown
 function DestinationSelector({
   label,
   color,
@@ -121,7 +121,7 @@ function DestinationSelector({
   onAddMultiple,
 }: {
   label: string;
-  color: 'blue' | 'green';
+  color: 'cyan' | 'emerald';
   selected: string[];
   onToggle: (dest: string) => void;
   onAddMultiple: (dests: string[]) => void;
@@ -129,16 +129,31 @@ function DestinationSelector({
   const [search, setSearch] = useState('');
   const [results, setResults] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Fetch destinations from API when search changes
   useEffect(() => {
+    if (!search.trim()) {
+      setResults([]);
+      return;
+    }
+
     const fetchDestinations = async () => {
       setLoading(true);
       try {
-        const params = new URLSearchParams({ limit: '100' });
-        if (search.trim()) {
-          params.set('search', search.trim());
-        }
+        const params = new URLSearchParams({ limit: '50', search: search.trim() });
         const res = await fetch(`/api/discovered/destinations?${params}`);
         if (res.ok) {
           const data = await res.json();
@@ -155,102 +170,167 @@ function DestinationSelector({
     return () => clearTimeout(debounce);
   }, [search]);
 
-  const borderColor = color === 'blue' ? 'border-blue-200' : 'border-emerald-200';
-  const bgColor = color === 'blue' ? 'bg-blue-50' : 'bg-emerald-50';
-  const btnColor = color === 'blue' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-emerald-600 hover:bg-emerald-700';
-
-  // Count how many results are not yet selected
+  const accentColor = color === 'cyan' ? 'cyan' : 'emerald';
   const unselectedResults = results.filter((r) => !selected.includes(r));
 
-  const handleAddAll = () => {
-    onAddMultiple(unselectedResults);
-    setSearch(''); // Clear search after adding
+  // Generate wildcard pattern from search term
+  const wildcardPattern = search.trim() ? `*${search.trim()}*` : '';
+  const hasWildcard = wildcardPattern && selected.includes(wildcardPattern);
+
+  const handleSelect = (dest: string) => {
+    onToggle(dest);
+    setSearch('');
+    setIsOpen(false);
   };
 
+  const handleAddWildcard = () => {
+    if (wildcardPattern && !selected.includes(wildcardPattern)) {
+      onAddMultiple([...selected, wildcardPattern]);
+      setSearch('');
+      setIsOpen(false);
+    }
+  };
+
+  const handleAddAll = () => {
+    onAddMultiple([...selected, ...unselectedResults]);
+    setSearch('');
+    setIsOpen(false);
+  };
+
+  // Check if a value is a wildcard pattern
+  const isWildcard = (value: string) => value.includes('*');
+
   return (
-    <div className={`p-3 rounded-lg border ${borderColor} ${bgColor}`}>
+    <div ref={containerRef} className="relative">
+      {/* Label row */}
       <div className="flex items-center justify-between mb-2">
-        <label className="text-sm font-medium text-gray-700">
+        <label className="text-sm font-medium text-slate-300">
           {label}
-          <span className="font-normal text-gray-400 ml-1">(empty = any)</span>
+          {selected.length > 0 && (
+            <span className={`ml-2 text-xs font-normal text-${accentColor}-400`}>
+              ({selected.length} selected)
+            </span>
+          )}
         </label>
         {selected.length > 0 && (
           <button
             onClick={() => onAddMultiple([])}
-            className="text-xs text-gray-500 hover:text-red-600"
+            className="text-xs text-slate-400 hover:text-red-400"
           >
-            Clear all
+            Clear
           </button>
         )}
       </div>
 
-      {/* Selected chips */}
+      {/* Selected chips - compact display */}
       {selected.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 mb-3">
-          {selected.map((dest) => (
-            <Chip
-              key={dest}
-              label={dest}
-              selected={true}
-              onClick={() => onToggle(dest)}
-              color={color}
-            />
-          ))}
+        <div className="flex flex-wrap gap-1 mb-2">
+          {selected.map((dest) => {
+            const wild = isWildcard(dest);
+            return (
+              <span
+                key={dest}
+                className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full ${
+                  wild
+                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                    : `bg-${accentColor}-500/20 text-${accentColor}-300 border border-${accentColor}-500/30`
+                }`}
+              >
+                {wild && <span className="text-amber-400 font-mono">⁕</span>}
+                {dest}
+                <button
+                  onClick={() => onToggle(dest)}
+                  className={wild ? 'hover:text-amber-100' : `hover:text-${accentColor}-100`}
+                >
+                  <XMarkIcon className="w-3 h-3" />
+                </button>
+              </span>
+            );
+          })}
         </div>
       )}
 
       {/* Search input */}
-      <div className="relative mb-2">
-        <MagnifyingGlassIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+      <div className="relative">
+        <MagnifyingGlassIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
         <input
           type="text"
-          placeholder="Type to search destinations..."
+          placeholder="Search and add destinations..."
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-full pl-8 pr-3 py-1.5 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white"
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setIsOpen(true);
+          }}
+          onFocus={() => setIsOpen(true)}
+          className="w-full pl-8 pr-3 py-2 text-sm border border-slate-600 rounded-lg focus:outline-none focus:ring-1 focus:ring-cyan-500 bg-slate-800 text-white placeholder-slate-500"
         />
         {loading && (
-          <div className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-gray-300 border-t-blue-500 rounded-full animate-spin" />
+          <div className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-slate-500 border-t-cyan-400 rounded-full animate-spin" />
+        )}
+
+        {/* Floating dropdown */}
+        {isOpen && search.trim() && (
+          <div className="absolute z-50 left-0 right-0 mt-1 bg-slate-800 border border-slate-600 rounded-lg shadow-xl max-h-64 overflow-y-auto">
+            {/* Wildcard option - always shown first */}
+            {!hasWildcard && (
+              <button
+                onClick={handleAddWildcard}
+                className="w-full px-3 py-2 text-left text-sm font-medium text-amber-400 hover:bg-amber-900/30 border-b border-slate-700 flex items-center gap-2"
+              >
+                <span className="font-mono">⁕</span>
+                <span>Add wildcard: <code className="bg-slate-700 px-1.5 py-0.5 rounded text-amber-300">{wildcardPattern}</code></span>
+                <span className="text-xs text-slate-500 ml-auto">matches any containing "{search.trim()}"</span>
+              </button>
+            )}
+
+            {loading ? (
+              <div className="px-3 py-2 text-sm text-slate-500">Searching...</div>
+            ) : results.length === 0 ? (
+              <div className="px-3 py-2 text-sm text-slate-500">No exact matches found</div>
+            ) : (
+              <>
+                {/* Add all option */}
+                {unselectedResults.length > 1 && (
+                  <button
+                    onClick={handleAddAll}
+                    className={`w-full px-3 py-2 text-left text-sm font-medium text-${accentColor}-400 hover:bg-slate-700 border-b border-slate-700`}
+                  >
+                    + Add all {unselectedResults.length} exact matches
+                  </button>
+                )}
+                {/* Individual results */}
+                {results.map((dest) => {
+                  const isSelected = selected.includes(dest);
+                  return (
+                    <button
+                      key={dest}
+                      onClick={() => handleSelect(dest)}
+                      disabled={isSelected}
+                      className={`w-full px-3 py-2 text-left text-sm hover:bg-slate-700 flex items-center justify-between ${
+                        isSelected ? 'text-slate-500' : 'text-slate-200'
+                      }`}
+                    >
+                      <span>{dest}</span>
+                      {isSelected && (
+                        <CheckIcon className="w-4 h-4 text-emerald-400" />
+                      )}
+                    </button>
+                  );
+                })}
+                {results.length >= 50 && (
+                  <div className="px-3 py-2 text-xs text-slate-500 border-t border-slate-700">
+                    Showing first 50 results
+                  </div>
+                )}
+              </>
+            )}
+          </div>
         )}
       </div>
 
-      {/* Available destinations */}
-      {loading ? (
-        <p className="text-xs text-gray-400 italic">Searching...</p>
-      ) : results.length === 0 ? (
-        <p className="text-xs text-gray-400 italic">
-          {search.trim() ? `No matches for "${search}"` : 'Type to search destinations'}
-        </p>
-      ) : (
-        <div className="space-y-2">
-          {/* Add all button */}
-          {search.trim() && unselectedResults.length > 0 && (
-            <button
-              onClick={handleAddAll}
-              className={`w-full py-1.5 text-xs font-medium text-white rounded-md ${btnColor} transition-colors`}
-            >
-              Add all {unselectedResults.length} matches for "{search}"
-            </button>
-          )}
-
-          {/* Results list */}
-          <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto">
-            {results.map((dest) => (
-              <Chip
-                key={dest}
-                label={dest}
-                selected={selected.includes(dest)}
-                onClick={() => onToggle(dest)}
-                color={color}
-              />
-            ))}
-            {results.length >= 100 && (
-              <span className="text-xs text-gray-400 py-1">
-                Showing first 100 (refine search)
-              </span>
-            )}
-          </div>
-        </div>
+      {/* Helper text when nothing selected */}
+      {selected.length === 0 && !isOpen && (
+        <p className="text-xs text-slate-500 mt-1">Leave empty to match any destination</p>
       )}
     </div>
   );
@@ -375,13 +455,6 @@ export default function NotificationSettings({
     }));
   };
 
-  const addDestinations = (list: 'fromDestinations' | 'toDestinations', destinations: string[]) => {
-    setDestinationPrefs((prev) => ({
-      ...prev,
-      [list]: Array.from(new Set([...prev[list], ...destinations])), // Merge and dedupe
-    }));
-  };
-
   // Dynamic rule handlers
   const handleSaveRule = async (rule: Omit<DynamicRule, 'id'> & { id?: string }) => {
     if (rule.id) {
@@ -452,26 +525,28 @@ export default function NotificationSettings({
 
   if (loading) {
     return (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-        <div className="bg-white rounded-xl p-8 shadow-xl">
-          <div className="animate-pulse flex items-center gap-3">
-            <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-            <span className="text-gray-600">Loading preferences...</span>
+      <>
+        <div className="fixed inset-0 bg-black/20 z-40" onClick={onClose} />
+        <div className="fixed right-0 top-0 h-full w-[28rem] bg-slate-900 shadow-2xl z-50 flex items-center justify-center animate-slide-in">
+          <div className="flex items-center gap-3">
+            <div className="w-5 h-5 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
+            <span className="text-slate-300">Loading preferences...</span>
           </div>
         </div>
-      </div>
+      </>
     );
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl w-full max-w-lg max-h-[85vh] overflow-hidden flex flex-col shadow-xl">
+    <>
+      <div className="fixed inset-0 bg-black/20 z-40" onClick={onClose} />
+      <div className="fixed right-0 top-0 h-full w-[28rem] bg-slate-900 shadow-2xl z-50 flex flex-col animate-slide-in">
         {/* Header */}
-        <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-900">Notification Settings</h2>
+        <div className="px-5 py-4 border-b border-slate-700 flex items-center justify-between bg-slate-800">
+          <h2 className="text-lg font-semibold text-white">Notification Settings</h2>
           <button
             onClick={onClose}
-            className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+            className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-colors"
           >
             <XMarkIcon className="w-5 h-5" />
           </button>
@@ -483,12 +558,12 @@ export default function NotificationSettings({
           <section className="space-y-4">
             <div className="flex items-start justify-between gap-4">
               <div className="flex items-start gap-3">
-                <div className="p-2 bg-blue-100 rounded-lg">
-                  <MapPinIcon className="w-5 h-5 text-blue-600" />
+                <div className="p-2 bg-cyan-900/50 rounded-lg">
+                  <MapPinIcon className="w-5 h-5 text-cyan-400" />
                 </div>
                 <div>
-                  <h3 className="font-medium text-gray-900">Geofence Alerts</h3>
-                  <p className="text-sm text-gray-500">Get notified when vessels enter or exit geofences</p>
+                  <h3 className="font-medium text-white">Geofence Alerts</h3>
+                  <p className="text-sm text-slate-400">Get notified when vessels enter or exit geofences</p>
                 </div>
               </div>
               <Toggle
@@ -499,12 +574,12 @@ export default function NotificationSettings({
 
             {geofencePrefs.enabled && (
               <div className="ml-12 space-y-3">
-                <label className="block text-sm font-medium text-gray-700">
+                <label className="block text-sm font-medium text-slate-300">
                   Monitor specific geofences
-                  <span className="font-normal text-gray-400 ml-1">(empty = all)</span>
+                  <span className="font-normal text-slate-500 ml-1">(empty = all)</span>
                 </label>
                 {availableGeofences.length === 0 ? (
-                  <p className="text-sm text-gray-400 italic py-3 px-4 bg-gray-50 rounded-lg">
+                  <p className="text-sm text-slate-500 italic py-3 px-4 bg-slate-800 rounded-lg">
                     No geofences created yet. Draw one on the map first.
                   </p>
                 ) : (
@@ -515,6 +590,7 @@ export default function NotificationSettings({
                         label={geofence.name}
                         selected={geofencePrefs.geofenceIds.includes(geofence.id)}
                         onClick={() => toggleGeofence(geofence.id)}
+                        color="cyan"
                       />
                     ))}
                   </div>
@@ -523,18 +599,18 @@ export default function NotificationSettings({
             )}
           </section>
 
-          <hr className="border-gray-200" />
+          <hr className="border-slate-700" />
 
           {/* Destination Change Section */}
           <section className="space-y-4">
             <div className="flex items-start justify-between gap-4">
               <div className="flex items-start gap-3">
-                <div className="p-2 bg-purple-100 rounded-lg">
-                  <ArrowsRightLeftIcon className="w-5 h-5 text-purple-600" />
+                <div className="p-2 bg-purple-900/50 rounded-lg">
+                  <ArrowsRightLeftIcon className="w-5 h-5 text-purple-400" />
                 </div>
                 <div>
-                  <h3 className="font-medium text-gray-900">Destination Changes</h3>
-                  <p className="text-sm text-gray-500">Get notified when vessels change their destination</p>
+                  <h3 className="font-medium text-white">Destination Changes</h3>
+                  <p className="text-sm text-slate-400">Get notified when vessels change their destination</p>
                 </div>
               </div>
               <Toggle
@@ -545,71 +621,39 @@ export default function NotificationSettings({
 
             {destinationPrefs.enabled && (
               <div className="ml-12 space-y-4">
-                {/* Filter mode toggle */}
-                <div className="flex items-center gap-3">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="destFilter"
-                      checked={destinationPrefs.fromDestinations.length === 0 && destinationPrefs.toDestinations.length === 0}
-                      onChange={() => setDestinationPrefs(prev => ({ ...prev, fromDestinations: [], toDestinations: [] }))}
-                      className="w-4 h-4 text-blue-600"
-                    />
-                    <span className="text-sm text-gray-700">All destination changes</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="radio"
-                      name="destFilter"
-                      checked={destinationPrefs.fromDestinations.length > 0 || destinationPrefs.toDestinations.length > 0}
-                      onChange={() => {}}
-                      className="w-4 h-4 text-blue-600"
-                    />
-                    <span className="text-sm text-gray-700">Specific destinations</span>
-                  </label>
-                </div>
-
                 {/* From Destinations */}
                 <DestinationSelector
                   label="Changed from"
-                  color="blue"
+                  color="cyan"
                   selected={destinationPrefs.fromDestinations}
                   onToggle={(dest) => toggleDestination('fromDestinations', dest)}
-                  onAddMultiple={(dests) =>
-                    dests.length === 0
-                      ? setDestinations('fromDestinations', [])
-                      : addDestinations('fromDestinations', dests)
-                  }
+                  onAddMultiple={(dests) => setDestinations('fromDestinations', dests)}
                 />
 
                 {/* To Destinations */}
                 <DestinationSelector
                   label="Changed to"
-                  color="green"
+                  color="emerald"
                   selected={destinationPrefs.toDestinations}
                   onToggle={(dest) => toggleDestination('toDestinations', dest)}
-                  onAddMultiple={(dests) =>
-                    dests.length === 0
-                      ? setDestinations('toDestinations', [])
-                      : addDestinations('toDestinations', dests)
-                  }
+                  onAddMultiple={(dests) => setDestinations('toDestinations', dests)}
                 />
               </div>
             )}
           </section>
 
-          <hr className="border-gray-200" />
+          <hr className="border-slate-700" />
 
           {/* Dynamic Rules Section */}
           <section className="space-y-4">
             <div className="flex items-start justify-between gap-4">
               <div className="flex items-start gap-3">
-                <div className="p-2 bg-purple-100 rounded-lg">
-                  <BoltIcon className="w-5 h-5 text-purple-600" />
+                <div className="p-2 bg-purple-900/50 rounded-lg">
+                  <BoltIcon className="w-5 h-5 text-purple-400" />
                 </div>
                 <div>
-                  <h3 className="font-medium text-gray-900">Dynamic Rules</h3>
-                  <p className="text-sm text-gray-500">Create custom notification rules with any field conditions</p>
+                  <h3 className="font-medium text-white">Dynamic Rules</h3>
+                  <p className="text-sm text-slate-400">Create custom notification rules with any field conditions</p>
                 </div>
               </div>
               <button
@@ -617,7 +661,7 @@ export default function NotificationSettings({
                   setEditingRule(null);
                   setShowRuleBuilder(true);
                 }}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-purple-300 hover:bg-purple-900/50 rounded-lg transition-colors"
               >
                 <PlusIcon className="w-4 h-4" />
                 Add Rule
@@ -627,7 +671,7 @@ export default function NotificationSettings({
             {/* Rules List */}
             <div className="space-y-2">
               {dynamicRules.length === 0 ? (
-                <p className="text-sm text-gray-400 italic py-3 px-4 bg-gray-50 rounded-lg">
+                <p className="text-sm text-slate-500 italic py-3 px-4 bg-slate-800 rounded-lg">
                   No dynamic rules created yet. Click "Add Rule" to create one.
                 </p>
               ) : (
@@ -635,21 +679,21 @@ export default function NotificationSettings({
                   <div
                     key={rule.id}
                     className={`flex items-center justify-between gap-3 p-3 rounded-lg border ${
-                      rule.isActive ? 'bg-purple-50 border-purple-200' : 'bg-gray-50 border-gray-200'
+                      rule.isActive ? 'bg-purple-900/30 border-purple-700' : 'bg-slate-800 border-slate-700'
                     }`}
                   >
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className={`font-medium text-sm ${rule.isActive ? 'text-gray-900' : 'text-gray-500'}`}>
+                        <span className={`font-medium text-sm ${rule.isActive ? 'text-white' : 'text-slate-500'}`}>
                           {rule.name}
                         </span>
                         {!rule.isActive && (
-                          <span className="px-1.5 py-0.5 text-xs bg-gray-200 text-gray-600 rounded">
+                          <span className="px-1.5 py-0.5 text-xs bg-slate-700 text-slate-400 rounded">
                             Disabled
                           </span>
                         )}
                       </div>
-                      <p className="text-xs text-gray-500 truncate mt-0.5">
+                      <p className="text-xs text-slate-500 truncate mt-0.5">
                         {formatCondition(rule.condition)}
                       </p>
                     </div>
@@ -663,14 +707,14 @@ export default function NotificationSettings({
                           setEditingRule(rule);
                           setShowRuleBuilder(true);
                         }}
-                        className="p-1.5 text-gray-400 hover:text-purple-600 hover:bg-purple-100 rounded transition-colors"
+                        className="p-1.5 text-slate-400 hover:text-purple-400 hover:bg-purple-900/50 rounded transition-colors"
                         title="Edit rule"
                       >
                         <PencilIcon className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() => handleDeleteRule(rule.id)}
-                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-100 rounded transition-colors"
+                        className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-red-900/30 rounded transition-colors"
                         title="Delete rule"
                       >
                         <TrashIcon className="w-4 h-4" />
@@ -683,11 +727,11 @@ export default function NotificationSettings({
           </section>
 
           {/* Info Box */}
-          <div className="flex gap-3 p-4 bg-gray-50 rounded-lg">
-            <InformationCircleIcon className="w-5 h-5 text-gray-400 flex-shrink-0 mt-0.5" />
-            <div className="text-sm text-gray-600">
-              <p className="font-medium text-gray-700 mb-1">How filters work</p>
-              <ul className="space-y-1 text-gray-500">
+          <div className="flex gap-3 p-4 bg-slate-800 rounded-lg border border-slate-700">
+            <InformationCircleIcon className="w-5 h-5 text-cyan-400 flex-shrink-0 mt-0.5" />
+            <div className="text-sm">
+              <p className="font-medium text-slate-200 mb-1">How filters work</p>
+              <ul className="space-y-1 text-slate-400">
                 <li>Empty selection means "match any"</li>
                 <li>Multiple selections mean "match any of these"</li>
               </ul>
@@ -696,20 +740,20 @@ export default function NotificationSettings({
         </div>
 
         {/* Footer */}
-        <div className="px-5 py-4 border-t border-gray-200 flex justify-end gap-3 bg-gray-50">
+        <div className="px-5 py-4 border-t border-slate-700 flex justify-end gap-3 bg-slate-800">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-200 rounded-lg transition-colors"
+            className="px-4 py-2 text-sm font-medium text-slate-300 hover:bg-slate-700 rounded-lg transition-colors"
           >
             Cancel
           </button>
           <button
             onClick={handleSave}
             disabled={saving}
-            className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            className="px-4 py-2 text-sm font-medium text-slate-900 bg-cyan-500 hover:bg-cyan-400 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
             {saving && (
-              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              <div className="w-4 h-4 border-2 border-slate-900 border-t-transparent rounded-full animate-spin" />
             )}
             {saving ? 'Saving...' : 'Save Changes'}
           </button>
@@ -727,6 +771,6 @@ export default function NotificationSettings({
           }}
         />
       )}
-    </div>
+    </>
   );
 }
